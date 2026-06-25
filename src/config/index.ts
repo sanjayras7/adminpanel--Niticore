@@ -16,6 +16,7 @@ export const config = {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10),
     maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '5', 10),
     maxPerEmailHour: 3,
+    emailWindowMs: 3600000,
   },
   email: {
     from: process.env.EMAIL_FROM || 'noreply@niticore.com',
