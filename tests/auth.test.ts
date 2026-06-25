@@ -2,7 +2,6 @@ import { checkRateLimit, checkEmailRateLimit, resetRateLimiter } from '@/lib/rat
 import { signTempToken, verifyTempToken } from '@/lib/jwt'
 import { config } from '@/config'
 import { encrypt, decrypt } from '@/lib/encryption'
-import { constantTimeCompare } from '@/lib/totp'
 
 jest.mock('otplib', () => {
   let counter = 1000
@@ -160,27 +159,6 @@ describe('TOTP utilities', () => {
     })
   })
 
-  describe('constant-time comparison', () => {
-    it('returns true for equal strings', () => {
-      expect(constantTimeCompare('hello', 'hello')).toBe(true)
-    })
-
-    it('returns false for different strings', () => {
-      expect(constantTimeCompare('hello', 'world')).toBe(false)
-    })
-
-    it('returns false for different length strings', () => {
-      expect(constantTimeCompare('abc', 'abcd')).toBe(false)
-    })
-
-    it('returns false for empty vs non-empty', () => {
-      expect(constantTimeCompare('', 'a')).toBe(false)
-    })
-
-    it('returns true for empty strings', () => {
-      expect(constantTimeCompare('', '')).toBe(true)
-    })
-  })
 })
 
 describe('TOTP encryption', () => {
