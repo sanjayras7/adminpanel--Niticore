@@ -22,6 +22,8 @@ export const config = {
     from: process.env.EMAIL_FROM || 'noreply@niticore.com',
     magicLinkBaseUrl: process.env.MAGIC_LINK_BASE_URL || 'http://localhost:3000/internal/auth/verify',
   },
+  encryption: {
+    internalAuthEncryptionKey: process.env.INTERNAL_AUTH_ENCRYPTION_KEY || '',
   totp: {
     encryptionKey: process.env.TOTP_ENCRYPTION_KEY || 'dev-encryption-key-32-bytes-long!',
     windowSize: parseInt(process.env.TOTP_WINDOW_SIZE || '1', 10),
@@ -34,3 +36,14 @@ export const config = {
   },
   isTest: process.env.NODE_ENV === 'test',
 }
+
+function validateConfig(): void {
+  if (!config.encryption.internalAuthEncryptionKey && !config.isTest) {
+    throw new Error(
+      'INTERNAL_AUTH_ENCRYPTION_KEY environment variable is required. ' +
+      'TOTP enrollment and verification cannot function without it.',
+    )
+  }
+}
+
+validateConfig()
