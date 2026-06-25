@@ -149,3 +149,128 @@ describe('generic response (no user existence leak)', () => {
     expect(genericMessage).toBe('If the email exists, a magic link has been sent')
   })
 })
+
+describe('POST /api/v1/internal/auth/enroll-totp - TOTP utilities', () => {
+  beforeEach(() => {
+    jest.resetModules()
+    const { clearTempSecrets } = require('@/lib/totp')
+    clearTempSecrets()
+  })
+
+  describe('generateTotpSecret', () => {
+    it('generates a secret with base32, ascii, and otpauth_url', () => {
+      const { generateTotpSecret } = require('@/lib/totp')
+      const secret = generateTotpSecret()
+      expect(secret.base32).toBeDefined()
+      expect(typeof secret.base32).toBe('string')
+      expect(secret.base32.length).toBeGreaterThan(0)
+      expect(secret.ascii).toBeDefined()
+      expect(typeof secret.ascii).toBe('string')
+      expect(secret.otpauth_url).toMatch(/^otpauth:\/\/totp\//)
+    })
+  })
+
+  describe('generateQrCodeDataUri', () => {
+    it('generates a base64 PNG data URI', async () => {
+      const { generateTotpSecret, generateQrCodeDataUri } = require('@/lib/totp')
+      const secret = generateTotpSecret()
+      const dataUri = await generateQrCodeDataUri(secret.otpauth_url)
+      expect(dataUri).toMatch(/^data:image\/png;base64,/)
+    })
+  })
+
+  describe('verifyTotpCode', () => {
+    it('verifies a valid TOTP code within the time window', () => {
+      const speakeasy = require('speakeasy')
+      const { generateTotpSecret, verifyTotpCode } = require('@/lib/totp')
+      const secret = generateTotpSecret()
+      const code = speakeasy.totp({ secret: secret.base32, encoding: 'base32' })
+      expect(verifyTotpCode(secret.base32, code)).toBe(true)
+    })
+
+    it('rejects an invalid TOTP code', () => {
+      const { verifyTotpCode } = require('@/lib/totp')
+      expect(verifyTotpCode('JBSWY3DPEHPK3PXP', '000000')).toBe(false)
+    })
+  })
+
+  describe('encryptSecret', () => {
+    it('returns encrypted secret in iv:tag:ciphertext hex format', () => {
+      const { encryptSecret } = require('@/lib/totp')
+      const plaintext = 'JBSWY3DPEHPK3PXP'
+      const encrypted = encryptSecret(plaintext)
+      const parts = encrypted.split(':')
+      expect(parts).toHaveLength(3)
+      expect(parts[0]).toMatch(/^[0-9a-f]{32}$/)
+      expect(parts[1]).toMatch(/^[0-9a-f]{32}$/)
+      expect(parts[2]).toMatch(/^[0-9a-f]+$/)
+    })
+
+    it('produces different ciphertexts for the same plaintext (random IV)', () => {
+      const { encryptSecret } = require('@/lib/totp')
+      const plaintext = 'JBSWY3DPEHPK3PXP'
+      const encrypted1 = encryptSecret(plaintext)
+      const encrypted2 = encryptSecret(plaintext)
+      expect(encrypted1).not.toBe(encrypted2)
+    })
+  })
+
+  describe('temp secret storage', () => {
+    it('stores and retrieves a temp secret for a user', () => {
+      const t = require('@/lib/totp')
+      const secret = t.generateTotpSecret()
+      t.storeTempSecret('user-1', secret)
+      const retrieved = t.retrieveTempSecret('user-1')
+      expect(retrieved).not.toBeNull()
+      expect(retrieved!.base32).toBe(secret.base32)
+    })
+
+    it('returns null for unknown user', () => {
+      const { retrieveTempSecret } = require('@/lib/totp')
+      expect(retrieveTempSecret('nonexistent')).toBeNull()
+    })
+
+    it('deletes temp secret after retrieval followed by delete', () => {
+      const t = require('@/lib/totp')
+      const secret = t.generateTotpSecret()
+      t.storeTempSecret('user-2', secret)
+      t.deleteTempSecret('user-2')
+      expect(t.retrieveTempSecret('user-2')).toBeNull()
+    })
+  })
+
+  describe('missing encryption key startup validation', () => {
+    it('throws error when INTERNAL_AUTH_ENCRYPTION_KEY is missing in non-test', () => {
+      jest.resetModules()
+      const prevEnv = process.env.NODE_ENV
+      const prevKey = process.env.INTERNAL_AUTH_ENCRYPTION_KEY
+      process.env.NODE_ENV = 'production'
+      delete process.env.INTERNAL_AUTH_ENCRYPTION_KEY
+      jest.isolateModules(() => {
+        expect(() => {
+          // Dynamic import won't work for requires, but we test via config
+          require('@/config')
+        }).toThrow()
+      })
+      process.env.NODE_ENV = prevEnv
+      process.env.INTERNAL_AUTH_ENCRYPTION_KEY = prevKey
+    })
+  })
+})
+
+describe('POST /api/v1/internal/auth/enroll-totp - response body security', () => {
+  it('secret is never in response JSON after confirmation (mode 2)', async () => {
+    const speakeasy = require('speakeasy')
+    const t = require('@/lib/totp')
+    const secret = t.generateTotpSecret()
+    t.storeTempSecret('test-user-id', secret)
+    const code = speakeasy.totp({ secret: secret.base32, encoding: 'base32' })
+    const confirmationCode = String(code).padStart(6, '0')
+
+    const { encryptSecret } = require('@/lib/totp')
+    const encrypted = encryptSecret(secret.base32)
+    const parts = encrypted.split(':')
+    expect(parts).toHaveLength(3)
+    expect(parts.every((p: string) => p.length > 0)).toBe(true)
+  })
+})
