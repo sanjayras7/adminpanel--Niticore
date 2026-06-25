@@ -1,5 +1,6 @@
 import { DataTypes, Model } from 'sequelize'
 import { sequelize } from '@/lib/sequelize'
+import { InternalRole } from './InternalRole'
 
 export interface InternalUserAttributes {
   id: string
@@ -43,6 +44,8 @@ export class InternalUser extends Model<InternalUserAttributes> implements Inter
   declare created_at: Date
   declare updated_at: Date
   declare deleted_at: Date | null
+
+  declare role?: InternalRole
 }
 
 InternalUser.init(
@@ -83,3 +86,8 @@ InternalUser.init(
     paranoid: true,
   },
 )
+
+InternalUser.belongsTo(InternalRole, {
+  foreignKey: 'internal_role_id',
+  as: 'role',
+})
