@@ -185,12 +185,21 @@ describe('POST /api/v1/internal/auth/enroll-totp - TOTP utilities', () => {
       const { generateTotpSecret, verifyTotpCode } = require('@/lib/totp')
       const secret = generateTotpSecret()
       const code = speakeasy.totp({ secret: secret.base32, encoding: 'base32' })
-      expect(verifyTotpCode(secret.base32, code)).toBe(true)
+      expect(verifyTotpCode(secret.base32, code)).toEqual({ valid: true })
     })
 
-    it('rejects an invalid TOTP code', () => {
+    it('rejects an invalid TOTP code with invalid_code reason', () => {
       const { verifyTotpCode } = require('@/lib/totp')
-      expect(verifyTotpCode('JBSWY3DPEHPK3PXP', '000000')).toBe(false)
+      expect(verifyTotpCode('JBSWY3DPEHPK3PXP', '000000')).toEqual({ valid: false, reason: 'invalid_code' })
+    })
+
+    it('returns expired for a code outside ±1 window but within ±4 window', () => {
+      const speakeasy = require('speakeasy')
+      const { generateTotpSecret, verifyTotpCode } = require('@/lib/totp')
+      const secret = generateTotpSecret()
+      const pastTime = Math.floor(Date.now() / 1000) - 90
+      const expiredCode = speakeasy.totp({ secret: secret.base32, encoding: 'base32', time: pastTime })
+      expect(verifyTotpCode(secret.base32, expiredCode)).toEqual({ valid: false, reason: 'expired' })
     })
   })
 

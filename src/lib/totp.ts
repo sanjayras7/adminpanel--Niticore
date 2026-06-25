@@ -34,13 +34,30 @@ export async function generateQrCodeDataUri(otpauthUrl: string): Promise<string>
   })
 }
 
-export function verifyTotpCode(secret: string, code: string): boolean {
-  return speakeasy.totp.verify({
+export type VerifyResult = { valid: true } | { valid: false; reason: 'invalid_code' | 'expired' }
+
+export function verifyTotpCode(secret: string, code: string): VerifyResult {
+  const isValidWithinWindow = speakeasy.totp.verify({
     secret,
     encoding: 'base32',
     token: code,
     window: 1,
   })
+  if (isValidWithinWindow) {
+    return { valid: true }
+  }
+
+  const isValidOutsideWindow = speakeasy.totp.verify({
+    secret,
+    encoding: 'base32',
+    token: code,
+    window: 4,
+  })
+  if (isValidOutsideWindow) {
+    return { valid: false, reason: 'expired' }
+  }
+
+  return { valid: false, reason: 'invalid_code' }
 }
 
 export function encryptSecret(plaintext: string): string {

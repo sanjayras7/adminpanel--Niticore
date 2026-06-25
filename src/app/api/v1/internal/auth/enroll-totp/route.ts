@@ -137,10 +137,10 @@ async function handleConfirmation(
 
   const secretBase32 = tempSecret.base32
 
-  const isValid = verifyTotpCode(secretBase32, confirmationCode)
-  if (!isValid) {
+  const verifyResult = verifyTotpCode(secretBase32, confirmationCode)
+  if (!verifyResult.valid) {
     return NextResponse.json(
-      { success: false, error: 'invalid_code' },
+      { success: false, error: verifyResult.reason },
       { status: 400 },
     )
   }
