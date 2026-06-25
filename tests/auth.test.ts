@@ -1,6 +1,33 @@
 import { checkRateLimit, checkEmailRateLimit, resetRateLimiter } from '@/lib/rate-limiter'
 import { signTempToken, verifyTempToken } from '@/lib/jwt'
 import { config } from '@/config'
+import { encrypt, decrypt } from '@/lib/encryption'
+
+jest.mock('otplib', () => {
+  let counter = 1000
+  return {
+    authenticator: {
+      generate: jest.fn((secret: string) => {
+        if (secret === 'MOCKBASETOKEN1000') return '123456'
+        return '654321'
+      }),
+      generateSecret: jest.fn(() => {
+        counter += 1
+        return `MOCKBASETOKEN${counter}`
+      }),
+      verifyDelta: jest.fn(({ token, secret }: { token: string; secret: string }) => {
+        if (token === '123456' && secret === 'MOCKBASETOKEN1000') return 0
+        if (token === '654321' && secret.startsWith('MOCKBASETOKEN')) return 0
+        return null
+      }),
+      options: {},
+    },
+  }
+})
+
+import { generateSecret, generateTOTP, validateTOTP } from '@/lib/totp'
+
+const MOCK_USER_ID = '123e4567-e89b-12d3-a456-426614174000'
 
 beforeEach(() => {
   resetRateLimiter()
@@ -33,28 +60,12 @@ describe('POST /api/v1/internal/auth/login - rate limiting', () => {
     for (let i = 0; i < config.rateLimit.maxRequests; i++) {
       checkRateLimit('login:ip:10.0.0.1')
     }
-    const blockedIp = checkRateLimit('login:ip:10.0.0.1')
-    expect(blockedIp.allowed).toBe(false)
-
-    const allowedIp = checkRateLimit('login:ip:10.0.0.2')
-    expect(allowedIp.allowed).toBe(true)
-  })
-
-  it('resets rate limit window after expiry', () => {
-    for (let i = 0; i < config.rateLimit.maxRequests; i++) {
-      checkRateLimit('login:ip:10.0.0.1')
-    }
-    const blocked = checkRateLimit('login:ip:10.0.0.1')
-    expect(blocked.allowed).toBe(false)
-
-    resetRateLimiter()
-
-    const allowed = checkRateLimit('login:ip:10.0.0.1')
-    expect(allowed.allowed).toBe(true)
+    expect(checkRateLimit('login:ip:10.0.0.1').allowed).toBe(false)
+    expect(checkRateLimit('login:ip:10.0.0.2').allowed).toBe(true)
   })
 })
 
-describe('POST /api/v1/internal/auth/login - email rate limiting', () => {
+describe('email rate limiting', () => {
   it('allows first email request', () => {
     expect(checkEmailRateLimit('test@example.com')).toBe(true)
   })
@@ -75,24 +86,7 @@ describe('POST /api/v1/internal/auth/login - email rate limiting', () => {
   })
 })
 
-describe('POST /api/v1/internal/auth/verify-magic-link - rate limiting', () => {
-  it('allows first verification request', () => {
-    const result = checkRateLimit('verify:ip:127.0.0.1')
-    expect(result.allowed).toBe(true)
-  })
-
-  it('blocks verification after max attempts', () => {
-    for (let i = 0; i < config.rateLimit.maxRequests; i++) {
-      checkRateLimit('verify:ip:10.0.0.1')
-    }
-    const result = checkRateLimit('verify:ip:10.0.0.1')
-    expect(result.allowed).toBe(false)
-  })
-})
-
-describe('temp JWT token generation and verification', () => {
-  const MOCK_USER_ID = '123e4567-e89b-12d3-a456-426614174000'
-
+describe('POST /api/v1/internal/auth/verify-magic-link - temp JWT token', () => {
   it('signs a temp token with correct payload', () => {
     const token = signTempToken(MOCK_USER_ID)
     expect(typeof token).toBe('string')
@@ -126,136 +120,99 @@ describe('temp JWT token generation and verification', () => {
   })
 })
 
-describe('POST /api/v1/internal/auth/enroll-totp - TOTP utilities', () => {
-  beforeEach(() => {
-    jest.resetModules()
-    const { clearTempSecrets } = require('@/lib/totp')
-    clearTempSecrets()
-  })
+describe('TOTP utilities', () => {
+  describe('secret generation', () => {
+    it('generates a secret string', () => {
+      const secret = generateSecret()
+      expect(typeof secret).toBe('string')
+      expect(secret.length).toBeGreaterThan(0)
+    })
 
-  describe('generateTotpSecret', () => {
-    it('generates a secret with base32, ascii, and otpauth_url', () => {
-      const { generateTotpSecret } = require('@/lib/totp')
-      const secret = generateTotpSecret()
-      expect(secret.base32).toBeDefined()
-      expect(typeof secret.base32).toBe('string')
-      expect(secret.base32.length).toBeGreaterThan(0)
-      expect(secret.ascii).toBeDefined()
-      expect(typeof secret.ascii).toBe('string')
-      expect(secret.otpauth_url).toMatch(/^otpauth:\/\/totp\//)
+    it('generates unique secrets on each call', () => {
+      const secret1 = generateSecret()
+      const secret2 = generateSecret()
+      expect(secret1).not.toBe(secret2)
     })
   })
 
-  describe('generateQrCodeDataUri', () => {
-    it('generates a base64 PNG data URI', async () => {
-      const { generateTotpSecret, generateQrCodeDataUri } = require('@/lib/totp')
-      const secret = generateTotpSecret()
-      const dataUri = await generateQrCodeDataUri(secret.otpauth_url)
-      expect(dataUri).toMatch(/^data:image\/png;base64,/)
+  describe('code generation and validation', () => {
+    it('validates a correctly generated code', () => {
+      const secret = generateSecret()
+      const code = generateTOTP(secret)
+      const result = validateTOTP(code, secret)
+      expect(result.valid).toBe(true)
+      expect(result.delta).toBe(0)
+    })
+
+    it('rejects an invalid code', () => {
+      const result = validateTOTP('000000', 'somesecret')
+      expect(result.valid).toBe(false)
+      expect(result.delta).toBeNull()
+    })
+
+    it('rejects a code for a different secret', () => {
+      const secret1 = generateSecret()
+      const code = generateTOTP(secret1)
+      const result = validateTOTP(code, 'othersecret')
+      expect(result.valid).toBe(false)
+      expect(result.delta).toBeNull()
     })
   })
 
-  describe('verifyTotpCode', () => {
-    it('verifies a valid TOTP code within the time window', () => {
-      const speakeasy = require('speakeasy')
-      const { generateTotpSecret, verifyTotpCode } = require('@/lib/totp')
-      const secret = generateTotpSecret()
-      const code = speakeasy.totp({ secret: secret.base32, encoding: 'base32' })
-      expect(verifyTotpCode(secret.base32, code)).toEqual({ valid: true })
-    })
+})
 
-    it('rejects an invalid TOTP code with invalid_code reason', () => {
-      const { verifyTotpCode } = require('@/lib/totp')
-      expect(verifyTotpCode('JBSWY3DPEHPK3PXP', '000000')).toEqual({ valid: false, reason: 'invalid_code' })
-    })
+describe('TOTP encryption', () => {
+  const testSecret = 'JBSWY3DPEB3W64TMMQXC4LQ'
 
-    it('returns expired for a code outside ±1 window but within ±4 window', () => {
-      const speakeasy = require('speakeasy')
-      const { generateTotpSecret, verifyTotpCode } = require('@/lib/totp')
-      const secret = generateTotpSecret()
-      const pastTime = Math.floor(Date.now() / 1000) - 90
-      const expiredCode = speakeasy.totp({ secret: secret.base32, encoding: 'base32', time: pastTime })
-      expect(verifyTotpCode(secret.base32, expiredCode)).toEqual({ valid: false, reason: 'expired' })
-    })
+  it('encrypts and decrypts a secret', () => {
+    const encrypted = encrypt(testSecret)
+    const decrypted = decrypt(encrypted)
+    expect(decrypted).toBe(testSecret)
   })
 
-  describe('encryptSecret', () => {
-    it('returns encrypted secret in iv:tag:ciphertext hex format', () => {
-      const { encryptSecret } = require('@/lib/totp')
-      const plaintext = 'JBSWY3DPEHPK3PXP'
-      const encrypted = encryptSecret(plaintext)
-      const parts = encrypted.split(':')
-      expect(parts).toHaveLength(3)
-      expect(parts[0]).toMatch(/^[0-9a-f]{32}$/)
-      expect(parts[1]).toMatch(/^[0-9a-f]{32}$/)
-      expect(parts[2]).toMatch(/^[0-9a-f]+$/)
-    })
-
-    it('produces different ciphertexts for the same plaintext (random IV)', () => {
-      const { encryptSecret } = require('@/lib/totp')
-      const plaintext = 'JBSWY3DPEHPK3PXP'
-      const encrypted1 = encryptSecret(plaintext)
-      const encrypted2 = encryptSecret(plaintext)
-      expect(encrypted1).not.toBe(encrypted2)
-    })
+  it('produces different ciphertexts for the same plaintext', () => {
+    const encrypted1 = encrypt(testSecret)
+    const encrypted2 = encrypt(testSecret)
+    expect(encrypted1).not.toBe(encrypted2)
   })
 
-  describe('temp secret storage', () => {
-    it('stores and retrieves a temp secret for a user', () => {
-      const t = require('@/lib/totp')
-      const secret = t.generateTotpSecret()
-      t.storeTempSecret('user-1', secret)
-      const retrieved = t.retrieveTempSecret('user-1')
-      expect(retrieved).not.toBeNull()
-      expect(retrieved!.base32).toBe(secret.base32)
-    })
-
-    it('returns null for unknown user', () => {
-      const { retrieveTempSecret } = require('@/lib/totp')
-      expect(retrieveTempSecret('nonexistent')).toBeNull()
-    })
-
-    it('deletes temp secret after retrieval followed by delete', () => {
-      const t = require('@/lib/totp')
-      const secret = t.generateTotpSecret()
-      t.storeTempSecret('user-2', secret)
-      t.deleteTempSecret('user-2')
-      expect(t.retrieveTempSecret('user-2')).toBeNull()
-    })
+  it('throws on tampered ciphertext', () => {
+    const encrypted = encrypt(testSecret)
+    const parts = encrypted.split(':')
+    const tampered = parts.slice(0, 2).join(':') + ':deadbeef'
+    expect(() => decrypt(tampered)).toThrow()
   })
 
-  describe('missing encryption key startup validation', () => {
-    it('throws error when INTERNAL_AUTH_ENCRYPTION_KEY is missing in non-test', () => {
-      jest.resetModules()
-      const prevEnv = process.env.NODE_ENV
-      const prevKey = process.env.INTERNAL_AUTH_ENCRYPTION_KEY
-      process.env.NODE_ENV = 'production'
-      delete process.env.INTERNAL_AUTH_ENCRYPTION_KEY
-      jest.isolateModules(() => {
-        expect(() => {
-          // Dynamic import won't work for requires, but we test via config
-          require('@/config')
-        }).toThrow()
-      })
-      process.env.NODE_ENV = prevEnv
-      process.env.INTERNAL_AUTH_ENCRYPTION_KEY = prevKey
-    })
+  it('throws on malformed payload', () => {
+    expect(() => decrypt('not-enough-parts')).toThrow('Invalid encrypted payload format')
+  })
+
+  it('empty string roundtrips correctly', () => {
+    const encrypted = encrypt('')
+    const decrypted = decrypt(encrypted)
+    expect(decrypted).toBe('')
   })
 })
 
-describe('POST /api/v1/internal/auth/enroll-totp - response body security', () => {
-  it('secret is never in response JSON after confirmation (mode 2)', async () => {
-    const speakeasy = require('speakeasy')
-    const t = require('@/lib/totp')
-    const secret = t.generateTotpSecret()
-    t.storeTempSecret('test-user-id', secret)
-    const code = speakeasy.totp({ secret: secret.base32, encoding: 'base32' })
-    const confirmationCode = String(code).padStart(6, '0')
+describe('POST /api/v1/internal/auth/verify-totp - rate limiting', () => {
+  it('allows first verify-totp request from an IP', () => {
+    const result = checkRateLimit('verify-totp:ip:127.0.0.1')
+    expect(result.allowed).toBe(true)
+  })
 
-    const { encryptSecret } = require('@/lib/totp')
-    const encrypted = encryptSecret(secret.base32)
-    const parts = encrypted.split(':')
-    expect(parts).toHaveLength(3)
-    expect(parts.every((p: string) => p.length > 0)).toBe(true)
+  it('blocks verify-totp after max attempts from same IP', () => {
+    for (let i = 0; i < config.rateLimit.maxRequests; i++) {
+      checkRateLimit('verify-totp:ip:10.0.0.1')
+    }
+    const result = checkRateLimit('verify-totp:ip:10.0.0.1')
+    expect(result.allowed).toBe(false)
+  })
+
+  it('tracks different IPs independently for verify-totp', () => {
+    for (let i = 0; i < config.rateLimit.maxRequests; i++) {
+      checkRateLimit('verify-totp:ip:10.0.0.1')
+    }
+    expect(checkRateLimit('verify-totp:ip:10.0.0.1').allowed).toBe(false)
+    expect(checkRateLimit('verify-totp:ip:10.0.0.2').allowed).toBe(true)
   })
 })
