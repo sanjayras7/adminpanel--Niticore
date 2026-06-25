@@ -16,6 +16,7 @@ async function up() {
         expires_at TIMESTAMP NOT NULL,
         idle_expires_at TIMESTAMP NOT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
         last_activity_at TIMESTAMP NOT NULL DEFAULT NOW(),
         ip_address VARCHAR(45) NOT NULL,
         user_agent TEXT NOT NULL

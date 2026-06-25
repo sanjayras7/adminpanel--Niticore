@@ -1,5 +1,4 @@
 import crypto from 'crypto'
-import { v4 as uuidv4 } from 'uuid'
 import { InternalSession } from '@/lib/models/InternalSession'
 import { config } from '@/config'
 
@@ -32,7 +31,6 @@ export async function createInternalSession(
   const idleExpiresAt = new Date(now.getTime() + idleExpiryMinutes * 60 * 1000)
 
   const session = await InternalSession.create({
-    id: uuidv4(),
     internal_user_id: internalUserId,
     token_hash: tokenHash,
     expires_at: expiresAt,

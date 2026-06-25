@@ -30,12 +30,12 @@ export async function getInternalSession(request: NextRequest): Promise<Internal
   const now = new Date()
 
   if (now >= new Date(session.expires_at)) {
-    await session.destroy()
+    try { await session.destroy() } catch { /* cleanup failure — still 401 */ }
     return null
   }
 
   if (now >= new Date(session.idle_expires_at)) {
-    await session.destroy()
+    try { await session.destroy() } catch { /* cleanup failure — still 401 */ }
     return null
   }
 
