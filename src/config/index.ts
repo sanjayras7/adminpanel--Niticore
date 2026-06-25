@@ -22,6 +22,12 @@ export const config = {
     from: process.env.EMAIL_FROM || 'noreply@niticore.com',
     magicLinkBaseUrl: process.env.MAGIC_LINK_BASE_URL || 'http://localhost:3000/internal/auth/verify',
   },
+  totp: {
+    encryptionKey: process.env.TOTP_ENCRYPTION_KEY || 'dev-encryption-key-32-bytes-long!',
+    windowSize: parseInt(process.env.TOTP_WINDOW_SIZE || '1', 10),
+    lockoutDurationMinutes: parseInt(process.env.TOTP_LOCKOUT_DURATION_MINUTES || '15', 10),
+    maxFailedAttempts: parseInt(process.env.TOTP_MAX_FAILED_ATTEMPTS || '5', 10),
+  },
   session: {
     absoluteExpiryMinutes: parseInt(process.env.SESSION_ABSOLUTE_EXPIRY_MINUTES || '1440', 10),
     idleExpiryMinutes: parseInt(process.env.SESSION_IDLE_EXPIRY_MINUTES || '60', 10),
