@@ -27,7 +27,7 @@ export function checkRateLimit(key: string): { allowed: boolean; retryAfterMs: n
 export function checkEmailRateLimit(email: string): boolean {
   const now = Date.now()
   const key = `email:${email}`
-  const windowMs = 3600000
+  const windowMs = config.rateLimit.emailWindowMs
   const entry = rateLimitStore.get(key)
 
   if (!entry || now >= entry.resetAt) {
