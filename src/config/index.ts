@@ -22,5 +22,9 @@ export const config = {
     from: process.env.EMAIL_FROM || 'noreply@niticore.com',
     magicLinkBaseUrl: process.env.MAGIC_LINK_BASE_URL || 'http://localhost:3000/internal/auth/verify',
   },
+  session: {
+    absoluteExpiryMinutes: parseInt(process.env.SESSION_ABSOLUTE_EXPIRY_MINUTES || '1440', 10),
+    idleExpiryMinutes: parseInt(process.env.SESSION_IDLE_EXPIRY_MINUTES || '60', 10),
+  },
   isTest: process.env.NODE_ENV === 'test',
 }
