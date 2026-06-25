@@ -62,7 +62,7 @@ async function up() {
         ADD COLUMN IF NOT EXISTS internal_role_id UUID REFERENCES internal_roles(id);
     `)
 
-    console.log('Migration 002: created internal_roles table, seeded roles, added FK on internal_users')
+    console.log('Migration 003: created internal_roles table, seeded roles, added FK on internal_users')
   } finally {
     await sequelize.close()
   }
@@ -77,7 +77,7 @@ async function down() {
       ALTER TABLE internal_users DROP COLUMN IF EXISTS internal_role_id;
     `)
     await sequelize.query(`DROP TABLE IF EXISTS internal_roles;`)
-    console.log('Migration 002: rolled back internal_roles table and FK')
+    console.log('Migration 003: rolled back internal_roles table and FK')
   } finally {
     await sequelize.close()
   }
@@ -89,7 +89,7 @@ if (command === 'up') {
 } else if (command === 'down') {
   down().catch((err) => { console.error(err); process.exit(1) })
 } else {
-  console.log('Usage: node 002-internal-roles.js <up|down>')
+  console.log('Usage: node 003-internal-roles.js <up|down>')
 }
 
 module.exports = { up, down }

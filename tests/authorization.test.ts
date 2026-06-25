@@ -176,7 +176,7 @@ describe('can() — authorization helper', () => {
       expect(can('Super Admin', 'auth', 'unknown-action' as ActionName)).toBe(false)
     })
 
-    it('returns false for unknown role (not in allowed list)', () => {
+    it('returns false when role is valid but not in the allowed list for that action', () => {
       expect(can('Super Admin', 'shell', 'create')).toBe(false)
     })
 
@@ -186,6 +186,10 @@ describe('can() — authorization helper', () => {
 
     it('returns false for non-existent action', () => {
       expect(can('Implementation Manager', 'auth', 'export' as ActionName)).toBe(false)
+    })
+
+    it('returns false for a truly unknown role name (not in the type)', () => {
+      expect(can('Fake Role' as InternalRoleName, 'auth', 'read')).toBe(false)
     })
   })
 })

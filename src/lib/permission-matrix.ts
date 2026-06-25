@@ -38,6 +38,8 @@ const RA: InternalRoleName = 'Read-only Auditor'
 
 const ALL_ROLES: InternalRoleName[] = [SA, IM, CS, SU, FA, EN, RA]
 
+export const ALL_ROLE_NAMES: readonly InternalRoleName[] = ALL_ROLES
+
 export const permissionMatrix: PermissionMatrix = {
   auth: {
     create: [SA],
