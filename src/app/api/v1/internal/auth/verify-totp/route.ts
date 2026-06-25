@@ -136,11 +136,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const codeTimestamp = Math.floor(Date.now() / 1000) + result.delta * STEP_SECONDS
+  const stepStart = (Math.floor(Date.now() / 1000 / STEP_SECONDS) + result.delta) * STEP_SECONDS
 
   if (user.last_totp_verified_at) {
-    const lastVerified = Math.floor(user.last_totp_verified_at.getTime() / 1000)
-    if (codeTimestamp <= lastVerified) {
+    const lastVerifiedStep = Math.floor(user.last_totp_verified_at.getTime() / 1000)
+    if (stepStart <= lastVerifiedStep) {
       const newCount = user.failed_totp_attempt_count + 1
       user.failed_totp_attempt_count = newCount
 
@@ -171,7 +171,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   user.failed_totp_attempt_count = 0
-  user.last_totp_verified_at = now
+  user.last_totp_verified_at = new Date(stepStart * 1000)
   user.locked_until = null
 
   try {
