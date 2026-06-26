@@ -3,10 +3,11 @@ import { InternalRole } from './InternalRole'
 import { MagicLink } from './MagicLink'
 import { InternalAuditEvent } from './InternalAuditEvent'
 
-export { InternalUser, InternalRole, MagicLink }
+export { InternalUser, InternalRole, MagicLink, InternalAuditEvent }
 
 export function initModels(): void {
   InternalUser;
   InternalRole;
   MagicLink;
+  InternalAuditEvent;
 }
