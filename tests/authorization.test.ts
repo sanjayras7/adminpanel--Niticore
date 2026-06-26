@@ -241,7 +241,7 @@ describe('can() — representative role/action pairs (design doc traceability)',
     { role: 'Finance/Admin' as const, module: 'tenant-ops' as const, action: 'read' as const, expected: true },
     { role: 'Finance/Admin' as const, module: 'tenant-ops' as const, action: 'update' as const, expected: false },
     { role: 'Finance/Admin' as const, module: 'nda-contracts' as const, action: 'read' as const, expected: true },
-    { role: 'Finance/Admin' as const, module: 'audit' as const, action: 'read' as const, expected: true },
+    { role: 'Finance/Admin' as const, module: 'audit' as const, action: 'read' as const, expected: false },
     { role: 'Finance/Admin' as const, module: 'framework-controls' as const, action: 'read' as const, expected: false },
 
     { role: 'Engineering' as const, module: 'provisioning-monitoring' as const, action: 'read' as const, expected: true },

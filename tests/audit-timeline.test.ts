@@ -54,17 +54,18 @@ describe('GET /api/v1/audit/timeline - authorization', () => {
     expect(body.error).toBe('unauthorized')
   })
 
-  it('allows all roles including Finance/Admin per permission matrix', async () => {
+  it('returns 403 when Finance/Admin tries to access audit timeline', async () => {
     const financeUser: InternalSessionUser = {
       ...mockSessionUser,
       roleName: 'Finance/Admin' as InternalRoleName,
     }
     mockGetInternalSession.mockResolvedValue(financeUser)
-    jest.spyOn(InternalAuditEvent, 'findAll').mockResolvedValue([])
     const { GET } = await import('@/app/api/v1/audit/timeline/route')
     const req = buildRequest(`${routePath}?lead_id=${VALID_UUID}`)
     const res = await GET(req)
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(403)
+    const body = await res.json()
+    expect(body.error).toBe('forbidden')
   })
 
   it('allows Super Admin role', async () => {
