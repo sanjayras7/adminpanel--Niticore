@@ -24,6 +24,7 @@ export const config = {
   },
   encryption: {
     internalAuthEncryptionKey: process.env.INTERNAL_AUTH_ENCRYPTION_KEY || '',
+  },
   totp: {
     encryptionKey: process.env.TOTP_ENCRYPTION_KEY || 'dev-encryption-key-32-bytes-long!',
     windowSize: parseInt(process.env.TOTP_WINDOW_SIZE || '1', 10),
