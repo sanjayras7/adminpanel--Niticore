@@ -4,7 +4,7 @@ import { sequelize } from '@/lib/sequelize'
 export interface InternalAuditEventAttributes {
   id: string
   actor_internal_user_id: string
-  actor_role: string | null
+  actor_role: string
   action: string
   target_type: string
   target_id: string
@@ -22,7 +22,7 @@ export interface InternalAuditEventAttributes {
 export class InternalAuditEvent extends Model<InternalAuditEventAttributes> implements InternalAuditEventAttributes {
   declare id: string
   declare actor_internal_user_id: string
-  declare actor_role: string | null
+  declare actor_role: string
   declare action: string
   declare target_type: string
   declare target_id: string
@@ -45,7 +45,7 @@ InternalAuditEvent.init(
       primaryKey: true,
     },
     actor_internal_user_id: { type: DataTypes.UUID, allowNull: false },
-    actor_role: { type: DataTypes.STRING(255), allowNull: true },
+    actor_role: { type: DataTypes.STRING(255), allowNull: false },
     action: { type: DataTypes.STRING(255), allowNull: false },
     target_type: { type: DataTypes.STRING(255), allowNull: false },
     target_id: { type: DataTypes.STRING(255), allowNull: false },
