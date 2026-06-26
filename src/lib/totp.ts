@@ -102,7 +102,6 @@ export function clearTempSecrets(): void {
   tempSecretStore.clear()
 }
 import { authenticator } from 'otplib'
-import { config } from '@/config'
 
 export interface TOTPValidation {
   valid: boolean
