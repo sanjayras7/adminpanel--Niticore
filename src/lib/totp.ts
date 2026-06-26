@@ -101,6 +101,7 @@ export function deleteTempSecret(userId: string): void {
 export function clearTempSecrets(): void {
   tempSecretStore.clear()
 }
+
 import { authenticator } from 'otplib'
 
 export interface TOTPValidation {

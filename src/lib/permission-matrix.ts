@@ -158,7 +158,7 @@ export const permissionMatrix: PermissionMatrix = {
   },
   audit: {
     create: [SA, RA],
-    read: ALL_ROLES,
+    read: [SA, IM, CS, SU, EN, RA],
     update: [],
     delete: [],
     override: [SA],
