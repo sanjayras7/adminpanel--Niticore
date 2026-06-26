@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Op } from 'sequelize'
 import { requirePermission } from '@/lib/auth/requirePermission'
 import { InternalAuditEvent } from '@/lib/models'
+import { formatAuditEvent } from '@/lib/audit-event-formatter'
 import type { InternalSessionUser } from '@/lib/auth/session'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -73,25 +74,35 @@ async function handler(req: NextRequest, ctx: { internalUser: InternalSessionUse
     events = events.slice(0, limit)
   }
 
-  const formatted = events.map((e) => ({
-    id: e.id,
-    actor: {
-      id: e.actor_internal_user_id,
-      role: e.actor_role ?? 'unknown',
-    },
-    action: e.action,
-    target: {
-      type: e.target_type,
-      id: e.target_id,
-    },
-    organizationId: e.organization_id,
-    leadId: e.lead_id,
-    beforeValues: e.before_values,
-    afterValues: e.after_values,
-    reason: e.reason,
-    metadata: e.metadata,
-    createdAt: e.created_at.toISOString(),
-  }))
+  let formatted: Array<Record<string, unknown>>
+  try {
+    formatted = events.map((e) => ({
+      id: e.id,
+      actor: {
+        id: e.actor_internal_user_id,
+        role: e.actor_role ?? 'unknown',
+      },
+      action: e.action,
+      description: formatAuditEvent(e),
+      target: {
+        type: e.target_type,
+        id: e.target_id,
+      },
+      organizationId: e.organization_id,
+      leadId: e.lead_id,
+      beforeValues: e.before_values,
+      afterValues: e.after_values,
+      reason: e.reason,
+      metadata: e.metadata,
+      createdAt: e.created_at.toISOString(),
+    }))
+  } catch (err) {
+    console.error('[AUDIT] Formatter error:', err)
+    return NextResponse.json(
+      { error: 'server_error', message: 'An internal error occurred.' },
+      { status: 500 },
+    )
+  }
 
   const nextCursor = hasMore && events.length > 0
     ? events[events.length - 1].created_at.toISOString()
