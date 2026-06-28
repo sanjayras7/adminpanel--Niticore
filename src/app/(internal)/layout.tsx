@@ -100,6 +100,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         <nav style={styles.sidebar}>
           <div style={styles.sidebarTitle}>Navigation</div>
           <div style={styles.sidebarItemActive}>Dashboard</div>
+          <a href="/internal/leads" style={styles.sidebarItem}>Leads</a>
         </nav>
         <main style={styles.main}>{children}</main>
       </div>
@@ -253,6 +254,14 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: '0.5px',
     color: '#888',
     padding: '8px 16px',
+  },
+  sidebarItem: {
+    display: 'block',
+    fontSize: 14,
+    padding: '8px 16px',
+    color: '#333',
+    textDecoration: 'none',
+    cursor: 'pointer',
   },
   sidebarItemActive: {
     fontSize: 14,
