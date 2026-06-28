@@ -8,6 +8,16 @@ export interface MeResponse {
   totp_enabled: boolean
 }
 
+export interface NavItem {
+  label: string
+  href: string
+  module: string
+}
+
+export interface NavResponse {
+  items: NavItem[]
+}
+
 export interface SessionClientError {
   status: number
   message: string
@@ -36,6 +46,24 @@ export class SessionClient {
         code = body.error
       } catch {}
       throw { status: res.status, message, code } as SessionClientError
+    }
+
+    return res.json()
+  }
+
+  async nav(): Promise<NavResponse> {
+    const res = await fetch(`${this.baseUrl}/nav`, {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    if (!res.ok) {
+      let message = 'Failed to fetch navigation'
+      try {
+        const body = await res.json()
+        message = body.message || message
+      } catch {}
+      throw { status: res.status, message } as SessionClientError
     }
 
     return res.json()
