@@ -124,6 +124,8 @@ function Shell({ children }: { children: React.ReactNode }) {
       <div style={styles.body}>
         <nav style={styles.sidebar}>
           <div style={styles.sidebarTitle}>Navigation</div>
+          <div style={styles.sidebarItemActive}>Dashboard</div>
+          <a href="/internal/leads" style={styles.sidebarItem}>Leads</a>
           {navError || (!navItems && !loading)
             ? <div style={styles.sidebarItem}>Dashboard</div>
             : navItems === null
@@ -303,6 +305,11 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '8px 16px',
   },
   sidebarItem: {
+    display: 'block',
+    fontSize: 14,
+    padding: '8px 16px',
+    color: '#333',
+    textDecoration: 'none',
     fontSize: 14,
     padding: '8px 16px',
     color: '#333',
