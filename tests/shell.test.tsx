@@ -10,6 +10,7 @@ const mockReplace = jest.fn()
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
   useSearchParams: () => new URLSearchParams(),
+  usePathname: () => '/internal',
 }))
 
 const mockUser: MeResponse = {
@@ -53,6 +54,7 @@ describe('InternalLayout shell', () => {
 
   it('renders content when session resolves', async () => {
     jest.spyOn(SessionClient.prototype, 'me').mockResolvedValue(mockUser)
+    jest.spyOn(SessionClient.prototype, 'nav').mockResolvedValue({ items: [] })
 
     render(
       <InternalLayout>
@@ -66,6 +68,7 @@ describe('InternalLayout shell', () => {
 
   it('renders the internal environment badge when authenticated', async () => {
     jest.spyOn(SessionClient.prototype, 'me').mockResolvedValue(mockUser)
+    jest.spyOn(SessionClient.prototype, 'nav').mockResolvedValue({ items: [] })
 
     render(
       <InternalLayout>
@@ -79,6 +82,7 @@ describe('InternalLayout shell', () => {
 
   it('renders user name and role in header when authenticated', async () => {
     jest.spyOn(SessionClient.prototype, 'me').mockResolvedValue(mockUser)
+    jest.spyOn(SessionClient.prototype, 'nav').mockResolvedValue({ items: [] })
 
     render(
       <InternalLayout>
@@ -88,6 +92,28 @@ describe('InternalLayout shell', () => {
 
     const userName = await screen.findByText('Jane Doe')
     expect(userName).toBeTruthy()
+  })
+
+  it('renders navigation items from the nav endpoint', async () => {
+    jest.spyOn(SessionClient.prototype, 'me').mockResolvedValue(mockUser)
+    jest.spyOn(SessionClient.prototype, 'nav').mockResolvedValue({
+      items: [
+        { label: 'Dashboard', href: '/internal', module: 'shell' },
+        { label: 'Leads / CRM', href: '/internal/leads', module: 'leads' },
+      ],
+    })
+
+    render(
+      <InternalLayout>
+        <div>Content</div>
+      </InternalLayout>,
+    )
+
+    const dashboardLink = await screen.findByText('Dashboard')
+    expect(dashboardLink).toBeTruthy()
+
+    const leadsLink = await screen.findByText('Leads / CRM')
+    expect(leadsLink).toBeTruthy()
   })
 
   it('shows error state for inactive user (403)', async () => {

@@ -1,20 +1,45 @@
 'use client'
 
 import { useAuth, AuthProvider } from '@/lib/auth/AuthContext'
-import { useRouter } from 'next/navigation'
+import { SessionClient, type NavItem } from '@/lib/auth/session-client'
+import { useRouter, usePathname } from 'next/navigation'
 import { useEffect, useState, useRef } from 'react'
+
+const sessionClient = new SessionClient()
 
 function Shell({ children }: { children: React.ReactNode }) {
   const { user, loading, error, signOut } = useAuth()
   const router = useRouter()
+  const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const [navItems, setNavItems] = useState<NavItem[] | null>(null)
+  const [navError, setNavError] = useState(false)
 
   useEffect(() => {
     if (!loading && !user && !error) {
       router.replace('/auth/login')
     }
   }, [loading, user, error, router])
+
+  useEffect(() => {
+    if (!user) return
+
+    let cancelled = false
+
+    async function loadNav() {
+      try {
+        const data = await sessionClient.nav()
+        if (!cancelled) setNavItems(data.items)
+      } catch {
+        if (!cancelled) setNavError(true)
+      }
+    }
+
+    loadNav()
+
+    return () => { cancelled = true }
+  }, [user])
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -99,7 +124,30 @@ function Shell({ children }: { children: React.ReactNode }) {
       <div style={styles.body}>
         <nav style={styles.sidebar}>
           <div style={styles.sidebarTitle}>Navigation</div>
-          <div style={styles.sidebarItemActive}>Dashboard</div>
+          {navError || (!navItems && !loading)
+            ? <div style={styles.sidebarItem}>Dashboard</div>
+            : navItems === null
+              ? <>
+                  <div style={styles.sidebarSkeleton} />
+                  <div style={styles.sidebarSkeleton} />
+                  <div style={styles.sidebarSkeleton} />
+                </>
+              : navItems.length === 0
+                ? <div style={styles.sidebarEmpty}>No modules available</div>
+                : navItems.map((item) => {
+                    const isActive = pathname === item.href ||
+                      (item.href !== '/internal' && pathname.startsWith(item.href))
+                    return (
+                      <a
+                        key={item.href}
+                        href={item.href}
+                        style={isActive ? styles.sidebarItemActive : styles.sidebarItem}
+                      >
+                        {item.label}
+                      </a>
+                    )
+                  })
+          }
         </nav>
         <main style={styles.main}>{children}</main>
       </div>
@@ -254,6 +302,15 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#888',
     padding: '8px 16px',
   },
+  sidebarItem: {
+    fontSize: 14,
+    padding: '8px 16px',
+    color: '#333',
+    fontWeight: 400,
+    textDecoration: 'none',
+    display: 'block',
+    cursor: 'pointer',
+  },
   sidebarItemActive: {
     fontSize: 14,
     padding: '8px 16px',
@@ -261,6 +318,20 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 500,
     background: '#E8F0FE',
     borderRight: '2px solid #0052CC',
+    textDecoration: 'none',
+    display: 'block',
+    cursor: 'pointer',
+  },
+  sidebarSkeleton: {
+    height: 14,
+    margin: '8px 16px',
+    borderRadius: 4,
+    background: '#e0e0e0',
+  },
+  sidebarEmpty: {
+    fontSize: 13,
+    padding: '8px 16px',
+    color: '#888',
   },
   main: {
     flex: 1,
