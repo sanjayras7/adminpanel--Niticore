@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { Lead } from '@/lib/models/Lead'
 import { logAuditEvent } from '@/lib/audit'
 import { sequelize } from '@/lib/sequelize'
+import { findDuplicateLeads, DuplicateMatch } from '@/lib/duplicate-detection'
 
 const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000'
 
@@ -12,6 +13,7 @@ const ALLOWED_FIELDS = new Set([
   'contact_last_name',
   'work_email',
   'phone',
+  'company_domain',
   'company_website',
   'country',
   'region',
@@ -84,6 +86,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (typeof whitelisted.phone === 'string') {
     whitelisted.phone = whitelisted.phone.trim()
   }
+  if (typeof whitelisted.company_domain === 'string') {
+    whitelisted.company_domain = whitelisted.company_domain.trim()
+  }
   if (typeof whitelisted.company_website === 'string') {
     whitelisted.company_website = whitelisted.company_website.trim()
   }
@@ -130,6 +135,38 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     await transaction.commit()
 
+    let potentialDuplicates: DuplicateMatch[] | null = null
+
+    try {
+      const companyDomain = (whitelisted.company_domain as string | null) || null
+      const matchedLeads = await findDuplicateLeads(lead.id, companyDomain, lead.work_email)
+
+      if (matchedLeads.length > 0) {
+        await Lead.update(
+          { potential_duplicate_ids: matchedLeads.map((m) => m.id) },
+          { where: { id: lead.id } },
+        )
+
+        await logAuditEvent({
+          actorInternalUserId: SYSTEM_USER_ID,
+          actorRole: 'System',
+          action: 'lead.duplicate_flag',
+          targetType: 'lead',
+          targetId: lead.id,
+          afterValues: {
+            matched_ids: matchedLeads.map((m) => m.id),
+            match_types: [...new Set(matchedLeads.map((m) => m.matched_on))],
+          },
+          ipAddress,
+          userAgent,
+        })
+
+        potentialDuplicates = matchedLeads
+      }
+    } catch (err) {
+      console.error('[LEADS] Duplicate scan failed:', err)
+    }
+
     return NextResponse.json(
       {
         id: lead.id,
@@ -138,9 +175,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         contact_last_name: lead.contact_last_name,
         work_email: lead.work_email,
         phone: lead.phone,
+        company_domain: lead.company_domain,
         source: lead.source,
         status: lead.status,
         created_at: lead.created_at.toISOString(),
+        potential_duplicates: potentialDuplicates,
       },
       { status: 201 },
     )
