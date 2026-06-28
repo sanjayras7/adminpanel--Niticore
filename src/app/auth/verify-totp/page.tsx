@@ -1,18 +1,27 @@
 'use client'
 
-import { useSearchParams } from 'next/navigation'
-import { useState, Suspense } from 'react'
+import { useRouter } from 'next/navigation'
+import { useState, useCallback } from 'react'
 
-function VerifyTotpContent() {
-  const searchParams = useSearchParams()
-  const tempToken = searchParams.get('temp_token')
+export default function VerifyTotpPage() {
+  const router = useRouter()
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  const getTempToken = useCallback(() => {
+    const token = sessionStorage.getItem('totp_temp_token')
+    if (!token) {
+      router.replace('/auth/login')
+    }
+    return token
+  }, [router])
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!tempToken) return
+
+    const token = getTempToken()
+    if (!token) return
 
     setError(null)
     setSubmitting(true)
@@ -21,7 +30,7 @@ function VerifyTotpContent() {
       const res = await fetch('/api/v1/internal/auth/verify-totp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ temp_token: tempToken, totp_code: code }),
+        body: JSON.stringify({ token, code }),
       })
 
       if (!res.ok) {
@@ -30,6 +39,7 @@ function VerifyTotpContent() {
         return
       }
 
+      sessionStorage.removeItem('totp_temp_token')
       window.location.href = '/'
     } catch {
       setError('Network error. Please check your connection.')
@@ -38,14 +48,8 @@ function VerifyTotpContent() {
     }
   }
 
-  if (!tempToken) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.card}>
-          <p>Invalid session. Please <a href="/auth/login" style={styles.link}>log in again</a>.</p>
-        </div>
-      </div>
-    )
+  if (!sessionStorage.getItem('totp_temp_token')) {
+    return null
   }
 
   return (
@@ -73,20 +77,6 @@ function VerifyTotpContent() {
         </form>
       </div>
     </div>
-  )
-}
-
-export default function VerifyTotpPage() {
-  return (
-    <Suspense
-      fallback={
-        <div style={styles.container}>
-          <div style={styles.card}><p>Loading...</p></div>
-        </div>
-      }
-    >
-      <VerifyTotpContent />
-    </Suspense>
   )
 }
 
@@ -125,7 +115,7 @@ const styles: Record<string, React.CSSProperties> = {
   label: {
     fontSize: 14,
     fontWeight: 500,
-    textAlign: 'left',
+    textAlign: 'left' as const,
   },
   input: {
     padding: '10px 12px',
@@ -133,7 +123,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     border: '1px solid #ccc',
     outline: 'none',
-    textAlign: 'center',
+    textAlign: 'center' as const,
     letterSpacing: 4,
   },
   button: {
@@ -150,10 +140,5 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     color: '#D93025',
     margin: 0,
-  },
-  link: {
-    fontSize: 14,
-    color: '#0052CC',
-    textDecoration: 'underline',
   },
 }

@@ -39,11 +39,14 @@ function VerifyContent() {
           return
         }
 
+        if (data.temp_token) {
+          sessionStorage.setItem('totp_temp_token', data.temp_token)
+        }
+
         if (data.totp_enrollment_required) {
-          router.replace(`/auth/enroll-totp?temp_token=${data.temp_token}`)
+          router.replace('/auth/enroll-totp')
         } else if (data.totp_required) {
-          const url = `/auth/verify-totp?temp_token=${encodeURIComponent(data.temp_token)}`
-          router.replace(url)
+          router.replace('/auth/verify-totp')
         }
       } catch {
         setError('Network error. Please try again.')
