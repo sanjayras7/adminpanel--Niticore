@@ -1,5 +1,5 @@
 jest.mock('@/lib/models/Lead', () => ({
-  Lead: { create: jest.fn() },
+  Lead: { create: jest.fn(), findAll: jest.fn(), update: jest.fn() },
 }))
 
 jest.mock('@/lib/audit', () => ({
@@ -18,6 +18,8 @@ import { logAuditEvent } from '@/lib/audit'
 import { sequelize } from '@/lib/sequelize'
 
 const mockLeadCreate = (Lead as jest.Mocked<typeof Lead>).create as jest.Mock
+const mockLeadFindAll = (Lead as jest.Mocked<typeof Lead>).findAll as jest.Mock
+const mockLeadUpdate = (Lead as jest.Mocked<typeof Lead>).update as jest.Mock
 const mockLogAuditEvent = logAuditEvent as jest.Mock
 const mockTransactionFn = (sequelize as jest.Mocked<typeof sequelize>).transaction as jest.Mock
 
@@ -51,6 +53,8 @@ let currentTxn: { commit: jest.Mock; rollback: jest.Mock }
 beforeEach(() => {
   jest.clearAllMocks()
   mockLeadCreate.mockResolvedValue(createMockLead())
+  mockLeadFindAll.mockResolvedValue([])
+  mockLeadUpdate.mockResolvedValue([1])
   currentTxn = { commit: jest.fn(), rollback: jest.fn() }
   mockTransactionFn.mockResolvedValue(currentTxn)
 })
@@ -250,6 +254,187 @@ describe('POST /api/v1/public/leads', () => {
       expect(createCall.contact_first_name).toBe('Jane')
       expect(createCall.contact_last_name).toBe('Doe')
       expect(createCall.work_email).toBe('jane@acme.com')
+    })
+  })
+
+  describe('duplicate detection', () => {
+    it('flags duplicate when existing lead shares the same company domain', async () => {
+      const existingLead = {
+        id: 'existing-uuid-1',
+        company_name: 'Existing Corp',
+        contact_first_name: 'Jane',
+        contact_last_name: 'Doe',
+        work_email: 'jane@existing.com',
+      }
+      mockLeadFindAll.mockResolvedValue([existingLead])
+
+      const response = await POST(mockRequest({
+        company_name: 'Acme Corp',
+        contact_first_name: 'John',
+        contact_last_name: 'Smith',
+        work_email: 'john@acme.com',
+        company_domain: 'existing.com',
+      }))
+
+      expect(response.status).toBe(201)
+      const body = await response.json()
+      expect(body.potential_duplicates).toHaveLength(1)
+      expect(body.potential_duplicates[0].id).toBe('existing-uuid-1')
+      expect(body.potential_duplicates[0].matched_on).toBe('company_domain')
+      expect(body.potential_duplicates[0].company_name).toBe('Existing Corp')
+    })
+
+    it('flags duplicate when existing lead shares the same email domain', async () => {
+      const existingLead = {
+        id: 'existing-uuid-2',
+        company_name: 'Another Corp',
+        contact_first_name: 'Bob',
+        contact_last_name: 'Brown',
+        work_email: 'bob@shared.com',
+      }
+      mockLeadFindAll.mockResolvedValue([existingLead])
+
+      const response = await POST(mockRequest({
+        company_name: 'New Corp',
+        contact_first_name: 'Alice',
+        contact_last_name: 'Green',
+        work_email: 'alice@shared.com',
+      }))
+
+      expect(response.status).toBe(201)
+      const body = await response.json()
+      expect(body.potential_duplicates).toHaveLength(1)
+      expect(body.potential_duplicates[0].matched_on).toBe('email_domain')
+    })
+
+    it('deduplicates when both domains point to the same existing lead', async () => {
+      const existingLead = {
+        id: 'existing-uuid-3',
+        company_name: 'Shared Corp',
+        contact_first_name: 'Carol',
+        contact_last_name: 'White',
+        work_email: 'carol@sharedcorp.com',
+      }
+      mockLeadFindAll.mockResolvedValue([existingLead])
+
+      const response = await POST(mockRequest({
+        company_name: 'Shared Corp 2',
+        contact_first_name: 'Dave',
+        contact_last_name: 'Black',
+        work_email: 'dave@sharedcorp.com',
+        company_domain: 'sharedcorp.com',
+      }))
+
+      expect(response.status).toBe(201)
+      const body = await response.json()
+      expect(body.potential_duplicates).toHaveLength(1)
+      expect(body.potential_duplicates[0].matched_on).toBe('company_domain')
+    })
+
+    it('returns potential_duplicates as null when no duplicates found', async () => {
+      mockLeadFindAll.mockResolvedValue([])
+
+      const response = await POST(mockRequest({
+        company_name: 'Solo Corp',
+        contact_first_name: 'Eve',
+        contact_last_name: 'Gray',
+        work_email: 'eve@newdomain.com',
+      }))
+
+      expect(response.status).toBe(201)
+      const body = await response.json()
+      expect(body.potential_duplicates).toBeNull()
+    })
+
+    it('returns 201 even if duplicate scan fails', async () => {
+      mockLeadFindAll.mockRejectedValue(new Error('Scan failure'))
+
+      const response = await POST(mockRequest({
+        company_name: 'Acme Corp',
+        contact_first_name: 'Jane',
+        contact_last_name: 'Doe',
+        work_email: 'jane@acme.com',
+      }))
+
+      expect(response.status).toBe(201)
+      const body = await response.json()
+      expect(body.potential_duplicates).toBeNull()
+    })
+
+    it('still creates the lead when duplicate is flagged (flag, not block)', async () => {
+      const existingLead = {
+        id: 'existing-uuid-4',
+        company_name: 'Old Corp',
+        contact_first_name: 'Grace',
+        contact_last_name: 'Hopper',
+        work_email: 'grace@oldcorp.com',
+      }
+      mockLeadFindAll.mockResolvedValue([existingLead])
+
+      const response = await POST(mockRequest({
+        company_name: 'New Corp',
+        contact_first_name: 'Alan',
+        contact_last_name: 'Turing',
+        work_email: 'alan@oldcorp.com',
+      }))
+
+      expect(response.status).toBe(201)
+      const body = await response.json()
+      expect(body.id).toBe('550e8400-e29b-41d4-a716-446655440000')
+      expect(body.potential_duplicates).toHaveLength(1)
+      expect(mockLeadCreate).toHaveBeenCalledTimes(1)
+    })
+
+    it('writes audit event lead.duplicate_flag when duplicates found', async () => {
+      const existingLead = {
+        id: 'existing-uuid-5',
+        company_name: 'Match Corp',
+        contact_first_name: 'Henry',
+        contact_last_name: 'Ford',
+        work_email: 'henry@matchcorp.com',
+      }
+      mockLeadFindAll.mockResolvedValue([existingLead])
+
+      await POST(mockRequest({
+        company_name: 'New Match',
+        contact_first_name: 'Nikola',
+        contact_last_name: 'Tesla',
+        work_email: 'nikola@matchcorp.com',
+      }))
+
+      expect(mockLogAuditEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'lead_duplicate_flag',
+          targetType: 'lead',
+          afterValues: expect.objectContaining({
+            matched_ids: ['existing-uuid-5'],
+            match_types: ['email_domain'],
+          }),
+        }),
+      )
+    })
+
+    it('updates potential_duplicate_ids on the new lead when duplicates found', async () => {
+      const existingLead = {
+        id: 'existing-uuid-6',
+        company_name: 'Flag Corp',
+        contact_first_name: 'Isaac',
+        contact_last_name: 'Newton',
+        work_email: 'isaac@flagcorp.com',
+      }
+      mockLeadFindAll.mockResolvedValue([existingLead])
+
+      await POST(mockRequest({
+        company_name: 'New Flag',
+        contact_first_name: 'Galileo',
+        contact_last_name: 'Galilei',
+        work_email: 'galileo@flagcorp.com',
+      }))
+
+      expect(mockLeadUpdate).toHaveBeenCalledWith(
+        { potential_duplicate_ids: ['existing-uuid-6'] },
+        { where: { id: '550e8400-e29b-41d4-a716-446655440000' } },
+      )
     })
   })
 

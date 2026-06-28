@@ -16,6 +16,7 @@ export interface LeadAttributes {
   interested_modules_json: string[] | null
   interested_frameworks_json: string[] | null
   message: string | null
+  potential_duplicate_ids: string[] | null
   source: string
   status: string
   assigned_owner_id: string | null
@@ -43,6 +44,7 @@ export class Lead extends Model<LeadAttributes> implements LeadAttributes {
   declare interested_modules_json: string[] | null
   declare interested_frameworks_json: string[] | null
   declare message: string | null
+  declare potential_duplicate_ids: string[] | null
   declare source: string
   declare status: string
   declare assigned_owner_id: string | null
@@ -75,6 +77,7 @@ Lead.init(
     interested_modules_json: { type: DataTypes.JSONB, allowNull: true },
     interested_frameworks_json: { type: DataTypes.JSONB, allowNull: true },
     message: { type: DataTypes.TEXT, allowNull: true },
+    potential_duplicate_ids: { type: DataTypes.JSONB, allowNull: true },
     source: { type: DataTypes.STRING(50), allowNull: false, defaultValue: 'Website Form' },
     status: { type: DataTypes.STRING(50), allowNull: false, defaultValue: 'New' },
     assigned_owner_id: { type: DataTypes.UUID, allowNull: true },

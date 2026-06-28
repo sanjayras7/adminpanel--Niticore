@@ -86,6 +86,9 @@ export const AUDIT_EVENT_TEMPLATES: Record<string, AuditEventTemplate> = {
   lead_assigned: (e) =>
     `${getActorName(e)} assigned lead ${e.target_id} to ${getMetadata(e, 'assigned_owner_name')}`,
 
+  lead_duplicate_flag: (e) =>
+    `${getActorName(e)} flagged lead ${e.target_id} as potential duplicate of ${getAfterValue(e, 'matched_ids')}`,
+
   tenant_provisioned: (e) =>
     `${getActorName(e)} provisioned tenant ${e.target_id}${getMetadata(e, 'company_name') !== 'unknown' ? ` (${getMetadata(e, 'company_name')})` : ''}`,
 

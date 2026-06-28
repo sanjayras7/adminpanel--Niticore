@@ -157,6 +157,19 @@ describe('AuditEventFormatter', () => {
     })
   })
 
+  describe('lead duplicate flag event', () => {
+    it('formats lead_duplicate_flag with matched IDs', () => {
+      const event = makeEvent({
+        action: 'lead_duplicate_flag',
+        target_id: 'lead-100',
+        after_values: { matched_ids: ['lead-50', 'lead-60'], match_types: ['company_domain'] },
+      })
+      expect(formatAuditEvent(event)).toBe(
+        'user-abc (Super Admin) flagged lead lead-100 as potential duplicate of ["lead-50","lead-60"]',
+      )
+    })
+  })
+
   describe('tenant / provisioning events', () => {
     it('formats tenant_provisioned with company name', () => {
       const event = makeEvent({
