@@ -404,7 +404,7 @@ describe('POST /api/v1/public/leads', () => {
 
       expect(mockLogAuditEvent).toHaveBeenCalledWith(
         expect.objectContaining({
-          action: 'lead.duplicate_flag',
+          action: 'lead_duplicate_flag',
           targetType: 'lead',
           afterValues: expect.objectContaining({
             matched_ids: ['existing-uuid-5'],

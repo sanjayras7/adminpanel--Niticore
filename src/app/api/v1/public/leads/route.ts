@@ -150,7 +150,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         await logAuditEvent({
           actorInternalUserId: SYSTEM_USER_ID,
           actorRole: 'System',
-          action: 'lead.duplicate_flag',
+          action: 'lead_duplicate_flag',
           targetType: 'lead',
           targetId: lead.id,
           afterValues: {
