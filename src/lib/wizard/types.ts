@@ -15,6 +15,17 @@ export interface PlanLifecycleData {
   initialStatus: string
 }
 
+export interface AdminRequestBody {
+  name: string
+  surname: string
+  email: string
+}
+
+export interface ModuleSelection {
+  moduleId: string
+  enabled: boolean
+}
+
 export interface FrameworkSelection {
   framework_id?: string | null
   framework_version_id?: string | null
@@ -37,6 +48,17 @@ export interface IntegrationIntentData {
   sso_provider?: string | null
   notes?: string | null
   created_by?: string
+}
+
+export interface WizardPrefillResponse {
+  leadId: string
+  organizationId: string | null
+  step1?: Partial<CustomerProfileData>
+  step2?: Partial<PlanLifecycleData>
+  step3?: Partial<AdminRequestBody>
+  step4?: ModuleSelection[]
+  step5?: Partial<FrameworkStepData>
+  step6?: Partial<IntegrationIntentData>
 }
 
 export interface WizardState {
