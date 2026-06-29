@@ -38,11 +38,14 @@ export interface GetSigningRequestStatusResult {
   providerStatus: string
   platformStatus: PlatformSigningStatus
   signers: Array<{ email: string; status: string; signedAt?: string }>
+  occurredAt?: string
 }
 
 export type PlatformSigningStatus =
   | 'draft'
   | 'awaiting_signature'
+  | 'sent'
+  | 'viewed'
   | 'signed'
   | 'declined'
   | 'expired'
@@ -50,6 +53,13 @@ export type PlatformSigningStatus =
   | 'error'
 
 export type ProviderName = 'dropbox_sign' | 'mock'
+
+export interface WebhookEvent {
+  envelopeId: string
+  eventType: 'sent' | 'viewed' | 'signed' | 'declined' | 'expired' | 'voided'
+  occurredAt: string
+  providerRawEvent: string
+}
 
 export interface VoidSigningRequestResult {
   envelopeId: string

@@ -7,6 +7,7 @@ import {
   SignedDocument,
   PlatformSigningStatus,
   LegalDocumentUpdateFields,
+  WebhookEvent,
   ESignProviderError,
   validateSignerEmail,
 } from './types'
@@ -20,6 +21,9 @@ export abstract class ESignAdapter {
   abstract getSigningRequestStatus(envelopeId: string): Promise<GetSigningRequestStatusResult>
   abstract voidSigningRequest(envelopeId: string, reason?: string): Promise<VoidSigningRequestResult>
   abstract downloadSignedDocument(envelopeId: string): Promise<SignedDocument>
+
+  abstract verifyWebhookSignature(payload: Buffer, signatureHeader: string): boolean
+  abstract parseWebhookEvent(payload: Buffer): WebhookEvent
 
   abstract mapProviderStatusToPlatform(providerStatus: string): PlatformSigningStatus
   abstract buildCreatePayload(params: CreateSigningRequestParams): Record<string, unknown>
