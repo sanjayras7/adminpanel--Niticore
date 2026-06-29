@@ -7,6 +7,7 @@ export interface OrganizationModuleConfigAttributes {
   organization_id: string
   module_id: string
   enabled: boolean
+  config_json: Record<string, unknown> | null
   created_at: Date
   updated_at: Date
 }
@@ -19,6 +20,7 @@ export class OrganizationModuleConfig
   declare organization_id: string
   declare module_id: string
   declare enabled: boolean
+  declare config_json: Record<string, unknown> | null
   declare created_at: Date
   declare updated_at: Date
 }
@@ -33,6 +35,7 @@ OrganizationModuleConfig.init(
     organization_id: { type: DataTypes.UUID, allowNull: false },
     module_id: { type: DataTypes.UUID, allowNull: false },
     enabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    config_json: { type: DataTypes.JSONB, allowNull: true },
     created_at: { type: DataTypes.DATE, allowNull: false },
     updated_at: { type: DataTypes.DATE, allowNull: false },
   },

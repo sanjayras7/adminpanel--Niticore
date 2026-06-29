@@ -26,6 +26,7 @@ import { ControlImplementationStep } from './ControlImplementationStep'
 import { ControlStepCategory } from './ControlStepCategory'
 import { ControlEvidenceType } from './ControlEvidenceType'
 import { GateOverride } from './GateOverride'
+import { Organization } from './Organization'
 
 InternalRole.hasMany(InternalUser, { foreignKey: 'internal_role_id', as: 'users' })
 
@@ -48,6 +49,12 @@ FrameworkSection.belongsTo(FrameworkSection, { foreignKey: 'parent_section_id', 
 
 FrameworkSection.hasMany(FrameworkClause, { foreignKey: 'framework_section_id', as: 'clauses' })
 FrameworkClause.belongsTo(FrameworkSection, { foreignKey: 'framework_section_id', as: 'section' })
+
+Organization.hasMany(OrganizationModuleConfig, { foreignKey: 'organization_id', as: 'moduleConfigs' })
+OrganizationModuleConfig.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' })
+
+Organization.hasMany(LegalDocument, { foreignKey: 'organization_id', as: 'legalDocuments' })
+LegalDocument.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' })
 
 export {
   InternalUser,
@@ -76,6 +83,7 @@ export {
   FrameworkSection,
   FrameworkClause,
   GateOverride,
+  Organization,
 }
 
 export function initModels(): void {
@@ -109,4 +117,5 @@ export function initModels(): void {
   FrameworkSection
   FrameworkClause
   GateOverride
+  Organization
 }
