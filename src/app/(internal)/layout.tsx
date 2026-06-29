@@ -1,107 +1,381 @@
 'use client'
 
-import { AuthProvider, useAuth } from '@/lib/frontend/auth-context'
-import Link from 'next/link'
-import type { ReactNode } from 'react'
+import { useAuth, AuthProvider } from '@/lib/auth/AuthContext'
+import { SessionClient, type NavItem } from '@/lib/auth/session-client'
+import { useRouter, usePathname } from 'next/navigation'
+import { useEffect, useState, useRef } from 'react'
 
-function Shell({ children }: { children: ReactNode }) {
-  const { user, isLoaded } = useAuth()
+const sessionClient = new SessionClient()
 
-  if (!isLoaded) {
-    return <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif' }}>Loading...</div>
+function Shell({ children }: { children: React.ReactNode }) {
+  const { user, loading, error, signOut } = useAuth()
+  const router = useRouter()
+  const pathname = usePathname()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [navItems, setNavItems] = useState<NavItem[] | null>(null)
+  const [navError, setNavError] = useState(false)
+
+  useEffect(() => {
+    if (!loading && !user && !error) {
+      router.replace('/auth/login')
+    }
+  }, [loading, user, error, router])
+
+  useEffect(() => {
+    if (!user) return
+
+    let cancelled = false
+
+    async function loadNav() {
+      try {
+        const data = await sessionClient.nav()
+        if (!cancelled) setNavItems(data.items)
+      } catch {
+        if (!cancelled) setNavError(true)
+      }
+    }
+
+    loadNav()
+
+    return () => { cancelled = true }
+  }, [user])
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    if (menuOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [menuOpen])
+
+  if (loading) {
+    return (
+      <div style={styles.loadingContainer}>
+        <div style={styles.spinner} />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div style={styles.loadingContainer}>
+        <div style={styles.errorCard}>
+          <p style={styles.errorText}>{error}</p>
+          <button onClick={() => window.location.reload()} style={styles.retryButton}>
+            Try again
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (!user) {
-    return <LoginGate />
+    return null
+  }
+
+  const displayName = `${user.name} ${user.surname}`.trim() || user.email
+
+  async function handleSignOut() {
+    setMenuOpen(false)
+    await signOut()
   }
 
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', minHeight: '100vh', background: '#f5f5f5' }}>
-      <nav style={{ background: '#1a1a2e', color: '#fff', padding: '12px 24px', display: 'flex', alignItems: 'center', gap: 24 }}>
-        <Link href="/frameworks" style={{ color: '#fff', textDecoration: 'none', fontWeight: 600, fontSize: 18 }}>
-          Niticore Admin
-        </Link>
-        <Link href="/frameworks" style={{ color: '#ccc', textDecoration: 'none', fontSize: 14 }}>
-          Frameworks
-        </Link>
-        <span style={{ marginLeft: 'auto', fontSize: 13, color: '#aaa' }}>
-          {user.name} {user.surname} ({user.roleName})
-        </span>
-        <button
-          onClick={() => {
-            sessionStorage.removeItem('auth_user')
-            window.location.reload()
-          }}
-          style={{ background: 'transparent', color: '#ccc', border: '1px solid #555', borderRadius: 4, padding: '4px 12px', cursor: 'pointer', fontSize: 12 }}
-        >
-          Sign out
-        </button>
-      </nav>
-      <main style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>
-        {children}
-      </main>
+    <div style={styles.layout}>
+      <header style={styles.header}>
+        <div style={styles.headerLeft}>
+          <span style={styles.logo}>Niticore</span>
+          <span style={styles.badge}>Internal — Super Admin Panel</span>
+        </div>
+        <div style={styles.headerRight}>
+          <div ref={menuRef} style={styles.userMenuWrapper}>
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              style={styles.userButton}
+              aria-label="User menu"
+            >
+              <div style={styles.avatar}>
+                {displayName.charAt(0).toUpperCase()}
+              </div>
+              <span style={styles.userName}>{displayName}</span>
+              <span style={styles.chevron}>{menuOpen ? '\u25B2' : '\u25BC'}</span>
+            </button>
+            {menuOpen && (
+              <div style={styles.dropdown}>
+                <div style={styles.dropdownHeader}>
+                  <div style={styles.dropdownName}>{displayName}</div>
+                  <div style={styles.dropdownRole}>{user.role ?? 'No role assigned'}</div>
+                  <div style={styles.dropdownEmail}>{user.email}</div>
+                </div>
+                <hr style={styles.divider} />
+                <button onClick={handleSignOut} style={styles.signOutButton}>
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+      <div style={styles.body}>
+        <nav style={styles.sidebar}>
+          <div style={styles.sidebarTitle}>Navigation</div>
+          <div style={styles.sidebarItemActive}>Dashboard</div>
+          <a href="/internal/leads" style={styles.sidebarItem}>Leads</a>
+          {navError || (!navItems && !loading)
+            ? <div style={styles.sidebarItem}>Dashboard</div>
+            : navItems === null
+              ? <>
+                  <div style={styles.sidebarSkeleton} />
+                  <div style={styles.sidebarSkeleton} />
+                  <div style={styles.sidebarSkeleton} />
+                </>
+              : navItems.length === 0
+                ? <div style={styles.sidebarEmpty}>No modules available</div>
+                : navItems.map((item) => {
+                    const isActive = pathname === item.href ||
+                      (item.href !== '/internal' && pathname.startsWith(item.href))
+                    return (
+                      <a
+                        key={item.href}
+                        href={item.href}
+                        style={isActive ? styles.sidebarItemActive : styles.sidebarItem}
+                      >
+                        {item.label}
+                      </a>
+                    )
+                  })
+          }
+        </nav>
+        <main style={styles.main}>{children}</main>
+      </div>
     </div>
   )
 }
 
-function LoginGate() {
-  const { setUser } = useAuth()
-
-  const handleLogin = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const fd = new FormData(e.currentTarget)
-    const id = fd.get('userId') as string
-    const name = fd.get('name') as string
-    const surname = fd.get('surname') as string
-    const email = fd.get('email') as string
-    const roleName = fd.get('roleName') as string
-    if (id && name) {
-      setUser({ id, name, surname, email, roleName })
-    }
-  }
-
-  return (
-    <div style={{ maxWidth: 400, margin: '80px auto', padding: 24, background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', fontFamily: 'system-ui, sans-serif' }}>
-      <h1 style={{ fontSize: 20, marginBottom: 16 }}>Niticore Admin</h1>
-      <p style={{ fontSize: 13, color: '#666', marginBottom: 16 }}>
-        Sign in (dev mode — select a role)
-      </p>
-      <form onSubmit={handleLogin}>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>User ID</label>
-          <input name="userId" defaultValue="user-dev-1" required style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }} />
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Name</label>
-          <input name="name" defaultValue="Dev" required style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }} />
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Surname</label>
-          <input name="surname" defaultValue="User" style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }} />
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Email</label>
-          <input name="email" defaultValue="dev@example.com" style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }} />
-        </div>
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Role</label>
-          <select name="roleName" defaultValue="Super Admin" style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box', background: '#fff' }}>
-            <option value="Super Admin">Super Admin</option>
-            <option value="Read-only Auditor">Read-only Auditor</option>
-          </select>
-        </div>
-        <button type="submit" style={{ width: '100%', padding: '10px', background: '#1a1a2e', color: '#fff', border: 'none', borderRadius: 4, fontSize: 14, cursor: 'pointer' }}>
-          Sign in
-        </button>
-      </form>
-    </div>
-  )
-}
-
-export default function InternalLayout({ children }: { children: ReactNode }) {
+export default function InternalLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
       <Shell>{children}</Shell>
     </AuthProvider>
   )
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  layout: {
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: '100vh',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  },
+  header: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 56,
+    padding: '0 24px',
+    borderBottom: '1px solid #e0e0e0',
+    background: '#fff',
+    flexShrink: 0,
+  },
+  headerLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 16,
+  },
+  logo: {
+    fontSize: 18,
+    fontWeight: 700,
+    color: '#1a1a1a',
+  },
+  badge: {
+    fontSize: 11,
+    fontWeight: 600,
+    padding: '3px 8px',
+    borderRadius: 4,
+    background: '#E8F5E9',
+    color: '#2E7D32',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.5px',
+  },
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+  },
+  userMenuWrapper: {
+    position: 'relative',
+  },
+  userButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '6px 12px',
+    border: '1px solid #e0e0e0',
+    borderRadius: 6,
+    background: '#fff',
+    cursor: 'pointer',
+    fontSize: 14,
+  },
+  avatar: {
+    width: 28,
+    height: 28,
+    borderRadius: '50%',
+    background: '#0052CC',
+    color: '#fff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 13,
+    fontWeight: 600,
+  },
+  userName: {
+    fontWeight: 500,
+    color: '#333',
+  },
+  chevron: {
+    fontSize: 10,
+    color: '#888',
+  },
+  dropdown: {
+    position: 'absolute',
+    right: 0,
+    top: '100%',
+    marginTop: 4,
+    width: 260,
+    background: '#fff',
+    border: '1px solid #e0e0e0',
+    borderRadius: 8,
+    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+    zIndex: 100,
+  },
+  dropdownHeader: {
+    padding: 16,
+  },
+  dropdownName: {
+    fontSize: 15,
+    fontWeight: 600,
+    color: '#1a1a1a',
+  },
+  dropdownRole: {
+    fontSize: 13,
+    color: '#555',
+    marginTop: 2,
+  },
+  dropdownEmail: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 4,
+  },
+  divider: {
+    border: 'none',
+    borderTop: '1px solid #e0e0e0',
+    margin: 0,
+  },
+  signOutButton: {
+    width: '100%',
+    padding: '12px 16px',
+    border: 'none',
+    background: 'none',
+    cursor: 'pointer',
+    fontSize: 14,
+    color: '#D93025',
+    textAlign: 'left',
+  },
+  body: {
+    display: 'flex',
+    flex: 1,
+  },
+  sidebar: {
+    width: 220,
+    borderRight: '1px solid #e0e0e0',
+    padding: '16px 0',
+    flexShrink: 0,
+    background: '#fafafa',
+  },
+  sidebarTitle: {
+    fontSize: 11,
+    fontWeight: 600,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.5px',
+    color: '#888',
+    padding: '8px 16px',
+  },
+  sidebarItem: {
+    display: 'block',
+    fontSize: 14,
+    padding: '8px 16px',
+    color: '#333',
+    textDecoration: 'none',
+    fontSize: 14,
+    padding: '8px 16px',
+    color: '#333',
+    fontWeight: 400,
+    textDecoration: 'none',
+    display: 'block',
+    cursor: 'pointer',
+  },
+  sidebarItemActive: {
+    fontSize: 14,
+    padding: '8px 16px',
+    color: '#0052CC',
+    fontWeight: 500,
+    background: '#E8F0FE',
+    borderRight: '2px solid #0052CC',
+    textDecoration: 'none',
+    display: 'block',
+    cursor: 'pointer',
+  },
+  sidebarSkeleton: {
+    height: 14,
+    margin: '8px 16px',
+    borderRadius: 4,
+    background: '#e0e0e0',
+  },
+  sidebarEmpty: {
+    fontSize: 13,
+    padding: '8px 16px',
+    color: '#888',
+  },
+  main: {
+    flex: 1,
+    padding: 24,
+    background: '#f5f5f5',
+    overflowY: 'auto',
+  },
+  loadingContainer: {
+    display: 'flex',
+    minHeight: '100vh',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  },
+  spinner: {
+    width: 32,
+    height: 32,
+    border: '3px solid #e0e0e0',
+    borderTop: '3px solid #0052CC',
+    borderRadius: '50%',
+    animation: 'spin 0.8s linear infinite',
+  },
+  errorCard: {
+    textAlign: 'center',
+    padding: 32,
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#D93025',
+    marginBottom: 16,
+  },
+  retryButton: {
+    padding: '8px 16px',
+    fontSize: 14,
+    borderRadius: 6,
+    border: '1px solid #ccc',
+    background: '#fff',
+    cursor: 'pointer',
+  },
 }
