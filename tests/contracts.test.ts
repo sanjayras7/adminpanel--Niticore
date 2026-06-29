@@ -1,4 +1,4 @@
-import { isValidTransition, isValidStatus, type PlatformStatus } from '@/lib/models'
+import { isValidTransition, isValidStatus, type ContractPlatformStatus } from '@/lib/models'
 import { writeAuditEvent } from '@/lib/audit'
 
 jest.mock('@/lib/models', () => {
@@ -24,7 +24,7 @@ jest.mock('@/lib/auth', () => ({
 
 describe('LegalDocument status transition validation', () => {
   describe('isValidTransition', () => {
-    const valid: [PlatformStatus, PlatformStatus][] = [
+    const valid: [ContractPlatformStatus, ContractPlatformStatus][] = [
       ['Draft', 'Sent'],
       ['Draft', 'Declined'],
       ['Draft', 'Expired'],
@@ -43,7 +43,7 @@ describe('LegalDocument status transition validation', () => {
       expect(isValidTransition(from, to)).toBe(true)
     })
 
-    const invalid: [PlatformStatus, PlatformStatus][] = [
+    const invalid: [ContractPlatformStatus, ContractPlatformStatus][] = [
       ['Draft', 'Signed'],
       ['Draft', 'Viewed'],
       ['Sent', 'Draft'],

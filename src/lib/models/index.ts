@@ -34,7 +34,7 @@ export {
   FrameworkClause,
   LegalDocument,
 }
-export { isValidTransition, isValidStatus, type PlatformStatus } from './LegalDocument'
+export { isValidTransition, isValidStatus, type ContractPlatformStatus } from './LegalDocument'
 
 export function initModels(): void {
   InternalUser

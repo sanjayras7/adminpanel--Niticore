@@ -17,7 +17,7 @@ async function up() {
         provider_name VARCHAR(100),
         provider_envelope_id VARCHAR(255) NOT NULL,
         provider_status VARCHAR(100),
-        platform_status VARCHAR(20) NOT NULL CHECK (platform_status IN ('Draft','Sent','Viewed','Signed','Declined','Expired','Voided')),
+        platform_status VARCHAR(50),
         signer_names_json TEXT NOT NULL,
         signer_emails_json TEXT NOT NULL,
         sent_at TIMESTAMPTZ,

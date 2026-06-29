@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { v4 as uuidv4 } from 'uuid'
 import { sequelize } from '@/lib/sequelize'
-import { LegalDocument, isValidStatus, isValidTransition, type PlatformStatus } from '@/lib/models'
+import { LegalDocument, isValidStatus, isValidTransition, type ContractPlatformStatus } from '@/lib/models'
 import { writeAuditEvent } from '@/lib/audit'
 
 interface WebhookEvent {
@@ -10,7 +11,7 @@ interface WebhookEvent {
   provider_raw_status?: string
 }
 
-const EVENT_TO_STATUS: Record<string, PlatformStatus> = {
+const EVENT_TO_STATUS: Record<string, ContractPlatformStatus> = {
   sent: 'Sent',
   viewed: 'Viewed',
   signed: 'Signed',
@@ -19,7 +20,7 @@ const EVENT_TO_STATUS: Record<string, PlatformStatus> = {
   voided: 'Voided',
 }
 
-const EVENT_TO_TIMESTAMP_FIELD: Record<string, keyof LegalDocument> = {
+const EVENT_TO_TIMESTAMP_FIELD: Record<string, string> = {
   sent: 'sent_at',
   viewed: 'viewed_at',
   signed: 'signed_at',
@@ -28,19 +29,29 @@ const EVENT_TO_TIMESTAMP_FIELD: Record<string, keyof LegalDocument> = {
   voided: 'voided_at',
 }
 
-async function logDeadLetter(
+async function insertDeadLetter(
   envelopeId: string,
   eventType: string,
   reason: string,
   rawPayload: unknown,
 ): Promise<void> {
-  console.warn('[WEBHOOK] Dead-letter event:', {
-    provider_envelope_id: envelopeId,
-    event_type: eventType,
-    reason,
-    raw_payload: JSON.stringify(rawPayload).slice(0, 2000),
-    occurred_at: new Date().toISOString(),
-  })
+  try {
+    await sequelize.query(
+      `INSERT INTO webhook_dead_letter (id, provider_envelope_id, event_type, reason, raw_payload, created_at)
+       VALUES (:id, :provider_envelope_id, :event_type, :reason, :raw_payload::jsonb, NOW())`,
+      {
+        replacements: {
+          id: uuidv4(),
+          provider_envelope_id: envelopeId,
+          event_type: eventType,
+          reason,
+          raw_payload: JSON.stringify(rawPayload),
+        },
+      },
+    )
+  } catch (dbErr) {
+    console.error('[WEBHOOK] Failed to insert dead-letter record:', dbErr)
+  }
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -81,17 +92,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     })
 
     if (!contract) {
-      await logDeadLetter(body.provider_envelope_id, body.event_type, 'unknown_envelope', body)
+      await insertDeadLetter(body.provider_envelope_id, body.event_type, 'unknown_envelope', body)
       return NextResponse.json(
         { error: 'not_found', message: 'No contract found for this envelope.' },
         { status: 404 },
       )
     }
 
-    if (!isValidStatus(contract.platform_status)) {
+    const currentStatus = contract.platform_status
+    if (!currentStatus || !isValidStatus(currentStatus)) {
       console.warn('[WEBHOOK] Invalid current status on contract:', {
         id: contract.id,
-        current_status: contract.platform_status,
+        current_status: currentStatus,
       })
       return NextResponse.json(
         { error: 'invalid_state', message: 'Contract has an invalid status.' },
@@ -99,32 +111,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       )
     }
 
-    if (contract.platform_status === targetStatus) {
+    if (currentStatus === targetStatus) {
       return NextResponse.json({ status: 'ignored_duplicate' })
     }
 
-    if (!isValidTransition(contract.platform_status, targetStatus)) {
+    if (!isValidTransition(currentStatus as ContractPlatformStatus, targetStatus)) {
       console.warn('[WEBHOOK] Invalid status transition:', {
         id: contract.id,
-        from: contract.platform_status,
+        from: currentStatus,
         to: targetStatus,
       })
       return NextResponse.json(
         {
           error: 'invalid_transition',
-          message: `Cannot transition from ${contract.platform_status} to ${targetStatus}.`,
+          message: `Cannot transition from ${currentStatus} to ${targetStatus}.`,
         },
         { status: 409 },
       )
     }
 
-    const beforeStatus = contract.platform_status
+    const beforeStatus = currentStatus
 
     await sequelize.transaction(async (t) => {
       contract.platform_status = targetStatus
 
-      if (timestampField && typeof contract[timestampField] === 'undefined') {
-        ;(contract as Record<string, unknown>)[timestampField as string] = body.occurred_at
+      if (timestampField) {
+        ;(contract as Record<string, unknown>)[timestampField] = body.occurred_at
           ? new Date(body.occurred_at)
           : new Date()
       }
