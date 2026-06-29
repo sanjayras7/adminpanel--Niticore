@@ -1,6 +1,11 @@
 import { InternalUser } from './InternalUser'
 import { InternalRole } from './InternalRole'
 import { MagicLink } from './MagicLink'
+import { Framework } from './Framework'
+import { FrameworkClassification } from './FrameworkClassification'
+import { FrameworkVersion } from './FrameworkVersion'
+import { FrameworkSection } from './FrameworkSection'
+import { FrameworkClause } from './FrameworkClause'
 import { InternalAuditEvent } from './InternalAuditEvent'
 import { InternalSession } from './InternalSession'
 import { Lead } from './Lead'
@@ -31,6 +36,17 @@ ControlVersion.hasMany(ControlEvidenceType, { foreignKey: 'control_version_id', 
 ControlEvidenceType.belongsTo(ControlVersion, { foreignKey: 'control_version_id', as: 'version' })
 ControlImplementationStep.belongsTo(ControlStepCategory, { foreignKey: 'category_id', as: 'category' })
 ControlStepCategory.hasMany(ControlImplementationStep, { foreignKey: 'category_id', as: 'steps' })
+Framework.hasMany(FrameworkVersion, { foreignKey: 'framework_id', as: 'versions' })
+FrameworkVersion.belongsTo(Framework, { foreignKey: 'framework_id', as: 'framework' })
+
+FrameworkVersion.hasMany(FrameworkSection, { foreignKey: 'framework_version_id', as: 'sections' })
+FrameworkSection.belongsTo(FrameworkVersion, { foreignKey: 'framework_version_id', as: 'version' })
+
+FrameworkSection.hasMany(FrameworkSection, { foreignKey: 'parent_section_id', as: 'childSections' })
+FrameworkSection.belongsTo(FrameworkSection, { foreignKey: 'parent_section_id', as: 'parentSection' })
+
+FrameworkSection.hasMany(FrameworkClause, { foreignKey: 'framework_section_id', as: 'clauses' })
+FrameworkClause.belongsTo(FrameworkSection, { foreignKey: 'framework_section_id', as: 'section' })
 
 export {
   InternalUser,
@@ -53,12 +69,17 @@ export {
   ControlImplementationStep,
   ControlStepCategory,
   ControlEvidenceType,
+  Framework,
+  FrameworkClassification,
+  FrameworkVersion,
+  FrameworkSection,
+  FrameworkClause,
 }
 
 export function initModels(): void {
   InternalUser
-  InternalRole
   MagicLink
+  InternalRole
   InternalAuditEvent
   InternalSession
   Lead
@@ -80,4 +101,10 @@ export function initModels(): void {
   ControlImplementationStep
   ControlStepCategory
   ControlEvidenceType
+}
+  Framework
+  FrameworkClassification
+  FrameworkVersion
+  FrameworkSection
+  FrameworkClause
 }
