@@ -5,8 +5,9 @@ import { InternalAuditEvent } from './InternalAuditEvent'
 import { InternalSession } from './InternalSession'
 import { Lead } from './Lead'
 import { LeadNote } from './LeadNote'
+import { LegalDocument } from './LegalDocument'
 
-export { InternalUser, InternalRole, MagicLink, InternalAuditEvent, InternalSession, Lead, LeadNote }
+export { InternalUser, InternalRole, MagicLink, InternalAuditEvent, InternalSession, Lead, LeadNote, LegalDocument }
 
 export function initModels(): void {
   InternalUser
@@ -16,4 +17,5 @@ export function initModels(): void {
   InternalSession
   Lead
   LeadNote
+  LegalDocument
 }
