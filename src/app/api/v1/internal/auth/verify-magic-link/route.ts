@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { MagicLink } from '@/lib/models'
+import { MagicLink, InternalUser } from '@/lib/models'
 import { signTempToken } from '@/lib/jwt'
 import { checkRateLimit } from '@/lib/rate-limiter'
 
@@ -78,7 +78,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   let internalUser = null
   try {
-    const { InternalUser } = await import('@/lib/models')
     internalUser = await InternalUser.findByPk(magicLink.internal_user_id, {
       attributes: ['id', 'status', 'totp_enabled', 'totp_enrolled_at'],
     })
