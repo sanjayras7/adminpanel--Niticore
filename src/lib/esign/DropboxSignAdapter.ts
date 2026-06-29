@@ -1,13 +1,18 @@
 import { ESignAdapter } from './ESignAdapter'
 import {
+  AdapterError,
   CreateSigningRequestParams,
   CreateSigningRequestResult,
   SendSigningRequestResult,
   GetSigningRequestStatusResult,
+  VoidSigningRequestResult,
+  SignedDocument,
   PlatformSigningStatus,
   LegalDocumentUpdateFields,
   ESignProviderError,
   ProviderName,
+  EnvelopeNotFoundError,
+  EnvelopeAlreadyCompletedError,
 } from './types'
 
 interface DropboxSignSignatureRequestResponse {
@@ -29,6 +34,8 @@ interface DropboxSignSignatureRequestResponse {
     error_name: string
   }
 }
+
+
 
 export class DropboxSignAdapter extends ESignAdapter {
   protected readonly providerName = 'dropbox_sign' as ProviderName
@@ -154,6 +161,117 @@ export class DropboxSignAdapter extends ESignAdapter {
       const error = err instanceof Error ? err : new Error(String(err))
       throw new ESignProviderError(
         `Dropbox Sign status request failed: ${error.message}`,
+        this.isNetworkError(err),
+        error.message,
+      )
+    }
+  }
+
+  async voidSigningRequest(envelopeId: string, reason?: string): Promise<VoidSigningRequestResult> {
+    if (!envelopeId) {
+      throw new ESignProviderError('envelopeId is required', false)
+    }
+
+    this.stubAuditLog('esign.void_signing_request.initiated', { envelopeId, reason })
+
+    try {
+      const response = await this.retryOnNetworkError(() =>
+        this.callApi(`/signature_request/cancel/${envelopeId}`, { signature_request_id: envelopeId }),
+      )
+
+      if (!response) {
+        throw new ESignProviderError('Empty response from Dropbox Sign void API', false)
+      }
+
+      const result = this.parseVoidResponse(response, envelopeId)
+
+      this.stubAuditLog('esign.void_signing_request.completed', {
+        envelopeId: result.envelopeId,
+        status: result.platformStatus,
+      })
+
+      return result
+    } catch (err) {
+      if (err instanceof EnvelopeAlreadyCompletedError || err instanceof EnvelopeNotFoundError) {
+        throw err
+      }
+
+      if (err instanceof ESignProviderError) {
+        this.stubAuditLog('esign.void_signing_request.failed', {
+          envelopeId,
+          error: err.message,
+        })
+        throw err
+      }
+
+      const error = err instanceof Error ? err : new Error(String(err))
+      this.stubAuditLog('esign.void_signing_request.failed', {
+        envelopeId,
+        error: error.message,
+      })
+
+      throw new ESignProviderError(
+        `Dropbox Sign void request failed: ${error.message}`,
+        this.isNetworkError(err),
+        error.message,
+      )
+    }
+  }
+
+  async downloadSignedDocument(envelopeId: string): Promise<SignedDocument> {
+    if (!envelopeId) {
+      throw new ESignProviderError('envelopeId is required', false)
+    }
+
+    this.stubAuditLog('esign.download_signed_document.initiated', { envelopeId })
+
+    try {
+      const fileResponse = await this.retryOnNetworkError(() =>
+        this.callApiForDownload(`/signature_request/files/${envelopeId}?file_type=pdf`),
+      )
+
+      if (!fileResponse) {
+        throw new ESignProviderError('Empty response from Dropbox Sign download API', false)
+      }
+
+      const fileName = fileResponse.fileName || `${envelopeId}.pdf`
+      const fileType = fileResponse.contentType || 'application/pdf'
+      const content = Buffer.from(fileResponse.data)
+
+      this.stubAuditLog('esign.download_signed_document.completed', {
+        envelopeId,
+        fileName,
+        fileSizeBytes: content.length,
+      })
+
+      return {
+        envelopeId,
+        fileName,
+        fileType,
+        fileSizeBytes: content.length,
+        content,
+      }
+    } catch (err) {
+      if (err instanceof AdapterError) {
+        throw err
+      }
+
+      if (err instanceof ESignProviderError) {
+        this.stubAuditLog('esign.download_signed_document.failed', {
+          envelopeId,
+          error: err.message,
+        })
+        throw err
+      }
+
+      const error = err instanceof Error ? err : new Error(String(err))
+      this.stubAuditLog('esign.download_signed_document.failed', {
+        envelopeId,
+        error: error.message,
+      })
+
+      throw new ESignProviderError(
+        `Dropbox Sign download request failed: ${error.message}`,
         this.isNetworkError(err),
         error.message,
       )
@@ -335,8 +453,54 @@ export class DropboxSignAdapter extends ESignAdapter {
     }
   }
 
+  parseVoidResponse(response: unknown, envelopeId: string): VoidSigningRequestResult {
+    const data = response as DropboxSignSignatureRequestResponse
+
+    if (data.error) {
+      if (data.error.error_name === 'not_found') {
+        throw new EnvelopeNotFoundError(`Envelope ${envelopeId} not found`)
+      }
+
+      return {
+        envelopeId,
+        providerName: 'dropbox_sign',
+        providerStatus: 'error',
+        platformStatus: 'error',
+        voidedAt: new Date().toISOString(),
+      }
+    }
+
+    const sr = data.signature_request
+    if (!sr) {
+      return {
+        envelopeId,
+        providerName: 'dropbox_sign',
+        providerStatus: 'unknown',
+        platformStatus: 'error',
+        voidedAt: new Date().toISOString(),
+      }
+    }
+
+    const providerStatus = sr.status || 'unknown'
+    const platformStatus = this.mapProviderStatusToPlatform(providerStatus)
+
+    if (platformStatus === 'signed') {
+      throw new EnvelopeAlreadyCompletedError(
+        `Envelope ${envelopeId} is already signed and cannot be voided`,
+      )
+    }
+
+    return {
+      envelopeId: sr.signature_request_id || envelopeId,
+      providerName: 'dropbox_sign',
+      providerStatus,
+      platformStatus: platformStatus === 'voided' ? 'voided' : platformStatus,
+      voidedAt: new Date().toISOString(),
+    }
+  }
+
   buildLegalDocumentUpdate(
-    result: CreateSigningRequestResult | SendSigningRequestResult | GetSigningRequestStatusResult,
+    result: CreateSigningRequestResult | SendSigningRequestResult | GetSigningRequestStatusResult | VoidSigningRequestResult,
   ): LegalDocumentUpdateFields {
     const platformStatus: PlatformSigningStatus =
       'platformStatus' in result
@@ -353,6 +517,10 @@ export class DropboxSignAdapter extends ESignAdapter {
 
     if ('sentAt' in result && result.sentAt) {
       return { ...base, sent_at: new Date(result.sentAt) }
+    }
+
+    if ('voidedAt' in result && result.voidedAt) {
+      return { ...base, voided_at: new Date(result.voidedAt) }
     }
 
     return base
@@ -406,6 +574,10 @@ export class DropboxSignAdapter extends ESignAdapter {
           throw new ESignProviderError('Invalid Dropbox Sign API key', false, 'HTTP 401')
         }
 
+        if (response.status === 404) {
+          throw new EnvelopeNotFoundError(`Dropbox Sign resource not found: ${path}`)
+        }
+
         throw new ESignProviderError(
           `Dropbox Sign API returned ${response.status}`,
           response.status >= 500,
@@ -424,4 +596,64 @@ export class DropboxSignAdapter extends ESignAdapter {
       clearTimeout(timeoutId)
     }
   }
+
+  private async callApiForDownload(path: string): Promise<{ data: ArrayBuffer; contentType: string; fileName: string | null } | null> {
+    if (!this.apiKey) {
+      throw new ESignProviderError('HELLOSIGN_API_KEY is not configured', false)
+    }
+
+    const url = `${this.baseUrl}${path}`
+    const headers: Record<string, string> = {
+      Authorization: `Basic ${Buffer.from(`${this.apiKey}:`).toString('base64')}`,
+    }
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
+
+    try {
+      const response = await fetch(url, { method: 'GET', headers, signal: controller.signal })
+
+      if (!response.ok) {
+        let errorBody: string | undefined
+        try {
+          errorBody = await response.text()
+        } catch {
+          errorBody = undefined
+        }
+
+        if (response.status === 401) {
+          throw new ESignProviderError('Invalid Dropbox Sign API key', false, 'HTTP 401')
+        }
+
+        if (response.status === 404) {
+          throw new EnvelopeNotFoundError(`Envelope ${path.split('/').pop()} not found`)
+        }
+
+        throw new ESignProviderError(
+          `Dropbox Sign API returned ${response.status}`,
+          response.status >= 500,
+          errorBody,
+        )
+      }
+
+      const contentType = response.headers.get('content-type') || 'application/pdf'
+      const disposition = response.headers.get('content-disposition')
+      let fileName: string | null = null
+      if (disposition) {
+        const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+        fileName = match ? match[1].replace(/['"]/g, '') : null
+      }
+      const data = await response.arrayBuffer()
+      return { data, contentType, fileName }
+    } catch (err) {
+      if (err instanceof ESignProviderError) throw err
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new ESignProviderError('Dropbox Sign API request timed out', true, 'timeout')
+      }
+      throw err
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+
 }
