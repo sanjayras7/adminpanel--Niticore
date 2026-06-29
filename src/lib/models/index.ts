@@ -27,6 +27,8 @@ import { ControlStepCategory } from './ControlStepCategory'
 import { ControlEvidenceType } from './ControlEvidenceType'
 import { GateOverride } from './GateOverride'
 import { Organization } from './Organization'
+import { TenantProvisioningLog } from './TenantProvisioningLog'
+import { TenantProvisioningDetail } from './TenantProvisioningDetail'
 
 InternalRole.hasMany(InternalUser, { foreignKey: 'internal_role_id', as: 'users' })
 
@@ -56,6 +58,9 @@ OrganizationModuleConfig.belongsTo(Organization, { foreignKey: 'organization_id'
 Organization.hasMany(LegalDocument, { foreignKey: 'organization_id', as: 'legalDocuments' })
 LegalDocument.belongsTo(Organization, { foreignKey: 'organization_id', as: 'organization' })
 
+TenantProvisioningLog.hasMany(TenantProvisioningDetail, { foreignKey: 'provisioning_log_id', as: 'details' })
+TenantProvisioningDetail.belongsTo(TenantProvisioningLog, { foreignKey: 'provisioning_log_id', as: 'log' })
+
 export {
   InternalUser,
   InternalRole,
@@ -84,6 +89,8 @@ export {
   FrameworkClause,
   GateOverride,
   Organization,
+  TenantProvisioningLog,
+  TenantProvisioningDetail,
 }
 
 export function initModels(): void {
@@ -118,4 +125,6 @@ export function initModels(): void {
   FrameworkClause
   GateOverride
   Organization
+  TenantProvisioningLog
+  TenantProvisioningDetail
 }
