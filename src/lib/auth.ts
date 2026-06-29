@@ -12,6 +12,49 @@ export interface AuthUser {
   roleName?: string | null
 }
 
+export const ACTION_PERMISSIONS: Record<string, string[]> = {
+  'tenant.resend_invite': ['Super Admin', 'Implementation Manager', 'Customer Success', 'Support'],
+  'tenant.reset_onboarding': ['Super Admin', 'Implementation Manager'],
+  'tenant.force_verify_domain': ['Super Admin', 'Implementation Manager'],
+  'tenant.disable': ['Super Admin'],
+  'tenant.unlock_user': ['Super Admin', 'Support'],
+}
+
+export const SENSITIVE_ACTIONS: Set<string> = new Set([
+  'tenant.reset_onboarding',
+  'tenant.force_verify_domain',
+  'tenant.disable',
+  'tenant.unlock_user',
+])
+
+export class PermissionError extends Error {
+  constructor(
+    message: string,
+    public statusCode: number = 403,
+  ) {
+    super(message)
+    this.name = 'PermissionError'
+  }
+}
+
+export function requirePermission(authUser: AuthUser, actionKey: string): void {
+  const allowedRoles = ACTION_PERMISSIONS[actionKey]
+  if (!allowedRoles) {
+    throw new PermissionError(`Unknown action: ${actionKey}`, 400)
+  }
+  if (!authUser.roleName || !allowedRoles.includes(authUser.roleName)) {
+    throw new PermissionError(`Role '${authUser.roleName}' is not authorized to perform '${actionKey}'`, 403)
+  }
+}
+
+export function requireReason(actionKey: string, reason: string | undefined | null): void {
+  if (SENSITIVE_ACTIONS.has(actionKey)) {
+    if (!reason || typeof reason !== 'string' || !reason.trim()) {
+      throw new PermissionError('Reason is required for this action', 422)
+    }
+  }
+}
+
 export class AuthError extends Error {
   constructor(
     message: string,
