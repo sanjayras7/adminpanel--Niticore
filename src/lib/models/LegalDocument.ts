@@ -28,6 +28,28 @@ export interface LegalDocumentAttributes {
   deleted_at: Date | null
 }
 
+export type ContractPlatformStatus = 'Draft' | 'Sent' | 'Viewed' | 'Signed' | 'Declined' | 'Expired' | 'Voided'
+
+const VALID_STATUSES: ContractPlatformStatus[] = ['Draft', 'Sent', 'Viewed', 'Signed', 'Declined', 'Expired', 'Voided']
+
+const STATUS_FLOW: Record<ContractPlatformStatus, ContractPlatformStatus[]> = {
+  Draft: ['Sent', 'Declined', 'Expired', 'Voided'],
+  Sent: ['Viewed', 'Declined', 'Expired', 'Voided'],
+  Viewed: ['Signed', 'Declined', 'Expired', 'Voided'],
+  Signed: [],
+  Declined: [],
+  Expired: [],
+  Voided: [],
+}
+
+export function isValidTransition(from: ContractPlatformStatus, to: ContractPlatformStatus): boolean {
+  return STATUS_FLOW[from]?.includes(to) ?? false
+}
+
+export function isValidStatus(s: string): s is ContractPlatformStatus {
+  return (VALID_STATUSES as string[]).includes(s)
+}
+
 export class LegalDocument extends Model<LegalDocumentAttributes> implements LegalDocumentAttributes {
   declare id: string
   declare document_type: string

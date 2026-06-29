@@ -1,4 +1,4 @@
-import { InternalUser } from './InternalUser'
+﻿import { InternalUser } from './InternalUser'
 import { InternalRole } from './InternalRole'
 import { MagicLink } from './MagicLink'
 import { Framework } from './Framework'
@@ -13,6 +13,7 @@ import { LeadNote } from './LeadNote'
 import { Notification } from './Notification'
 import { initNotificationDispatcher } from '@/lib/notifications'
 import { LegalDocument } from './LegalDocument'
+export { isValidTransition, isValidStatus, type ContractPlatformStatus } from './LegalDocument'
 import { OrganizationAdminInvite } from './OrganizationAdminInvite'
 import { Module } from './Module'
 import { OrganizationModuleConfig } from './OrganizationModuleConfig'
@@ -25,7 +26,6 @@ import { ControlImplementationStep } from './ControlImplementationStep'
 import { ControlStepCategory } from './ControlStepCategory'
 import { ControlEvidenceType } from './ControlEvidenceType'
 
-InternalUser.belongsTo(InternalRole, { foreignKey: 'internal_role_id', as: 'role' })
 InternalRole.hasMany(InternalUser, { foreignKey: 'internal_role_id', as: 'users' })
 
 Control.hasMany(ControlVersion, { foreignKey: 'control_id', as: 'versions' })
