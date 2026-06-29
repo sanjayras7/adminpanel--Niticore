@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { ESignAdapter } from './ESignAdapter'
 import {
   AdapterError,
@@ -9,6 +10,7 @@ import {
   SignedDocument,
   PlatformSigningStatus,
   LegalDocumentUpdateFields,
+  WebhookEvent,
   ESignProviderError,
   ProviderName,
   EnvelopeNotFoundError,
@@ -33,6 +35,27 @@ interface DropboxSignSignatureRequestResponse {
     error_msg: string
     error_name: string
   }
+}
+
+interface DropboxSignWebhookPayload {
+  signature_request?: {
+    signature_request_id: string
+    [key: string]: unknown
+  }
+  event?: {
+    event_type: string
+    event_time?: string
+    [key: string]: unknown
+  }
+}
+
+const DROPBOX_SIGN_EVENT_MAP: Record<string, WebhookEvent['eventType']> = {
+  signature_request_sent: 'sent',
+  signature_request_viewed: 'viewed',
+  signature_request_signed: 'signed',
+  signature_request_declined: 'declined',
+  signature_request_expired: 'expired',
+  signature_request_canceled: 'voided',
 }
 
 
@@ -278,11 +301,68 @@ export class DropboxSignAdapter extends ESignAdapter {
     }
   }
 
+  verifyWebhookSignature(payload: Buffer, signatureHeader: string): boolean {
+    if (!this.apiKey) {
+      return false
+    }
+
+    const expected = crypto
+      .createHmac('sha256', this.apiKey)
+      .update(payload)
+      .digest('hex')
+
+    if (!signatureHeader) {
+      return false
+    }
+
+    try {
+      return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader))
+    } catch {
+      return false
+    }
+  }
+
+  parseWebhookEvent(payload: Buffer): WebhookEvent {
+    const raw: string = payload.toString('utf8')
+    let parsed: DropboxSignWebhookPayload
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      throw new ESignProviderError('Invalid webhook payload: not valid JSON', false)
+    }
+
+    const envelopeId = parsed.signature_request?.signature_request_id
+    if (!envelopeId) {
+      throw new ESignProviderError('Invalid webhook payload: missing signature_request_id', false)
+    }
+
+    const rawEventType = parsed.event?.event_type
+    if (!rawEventType) {
+      throw new ESignProviderError('Invalid webhook payload: missing event_type', false)
+    }
+
+    const eventType = DROPBOX_SIGN_EVENT_MAP[rawEventType]
+    if (!eventType) {
+      throw new ESignProviderError(`Unknown Dropbox Sign event type: ${rawEventType}`, false)
+    }
+
+    const occurredAt = parsed.event?.event_time
+      ? new Date(Number(parsed.event.event_time) * 1000).toISOString()
+      : new Date().toISOString()
+
+    return {
+      envelopeId,
+      eventType,
+      occurredAt,
+      providerRawEvent: rawEventType,
+    }
+  }
+
   mapProviderStatusToPlatform(providerStatus: string): PlatformSigningStatus {
     switch (providerStatus) {
       case 'awaiting_signature':
       case 'awaiting_approval':
-        return 'awaiting_signature'
+        return 'sent'
       case 'signed':
         return 'signed'
       case 'declined':
@@ -294,7 +374,7 @@ export class DropboxSignAdapter extends ESignAdapter {
       case 'errored':
         return 'error'
       case 'sent':
-        return 'draft'
+        return 'sent'
       default:
         return 'draft'
     }
@@ -370,7 +450,7 @@ export class DropboxSignAdapter extends ESignAdapter {
 
     const providerStatus = sr.status || 'draft'
     const platformStatus = this.mapProviderStatusToPlatform(providerStatus)
-    const envelopeStatus = platformStatus === 'awaiting_signature' ? 'sent' : platformStatus === 'error' ? 'error' : 'pending_send'
+    const envelopeStatus = (platformStatus === 'sent' || platformStatus === 'awaiting_signature') ? 'sent' : platformStatus === 'error' ? 'error' : 'pending_send'
 
     return {
       envelopeId: sr.signature_request_id,
@@ -506,13 +586,25 @@ export class DropboxSignAdapter extends ESignAdapter {
       'platformStatus' in result
         ? result.platformStatus
         : result.status === 'sent'
-          ? 'awaiting_signature'
+          ? 'sent'
           : 'draft'
 
     const base: LegalDocumentUpdateFields = {
       provider_envelope_id: result.envelopeId,
       provider_status: 'providerStatus' in result ? result.providerStatus : '',
       platform_status: platformStatus,
+    }
+
+    if ('occurredAt' in result && result.occurredAt) {
+      const at = new Date(result.occurredAt)
+      switch (platformStatus) {
+        case 'sent': return { ...base, sent_at: at }
+        case 'viewed': return { ...base, viewed_at: at }
+        case 'signed': return { ...base, signed_at: at }
+        case 'declined': return { ...base, declined_at: at }
+        case 'expired': return { ...base, expired_at: at }
+        case 'voided': return { ...base, voided_at: at }
+      }
     }
 
     if ('sentAt' in result && result.sentAt) {

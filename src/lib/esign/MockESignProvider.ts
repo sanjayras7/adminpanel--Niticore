@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { ESignAdapter } from './ESignAdapter'
 import {
   CreateSigningRequestParams,
@@ -8,11 +9,13 @@ import {
   SignedDocument,
   PlatformSigningStatus,
   LegalDocumentUpdateFields,
+  WebhookEvent,
   ProviderName,
   EnvelopeNotFoundError,
   EnvelopeAlreadyCompletedError,
   DocumentNotReadyError,
   DocumentNotAvailableError,
+  ESignProviderError,
 } from './types'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -33,8 +36,14 @@ interface MockEnvelopeState {
 export class MockESignProvider extends ESignAdapter {
   protected readonly providerName = 'mock' as ProviderName
   protected readonly maxFileSizeBytes = 100 * 1024 * 1024
+  private readonly webhookSecret: string
 
   private envelopes: Map<string, MockEnvelopeState> = new Map()
+
+  constructor(apiKeyOrSecret?: string) {
+    super()
+    this.webhookSecret = apiKeyOrSecret || process.env.HELLOSIGN_API_KEY || 'mock-webhook-secret'
+  }
 
   async createSigningRequest(params: CreateSigningRequestParams): Promise<CreateSigningRequestResult> {
     this.validateCreateParams(params)
@@ -52,8 +61,9 @@ export class MockESignProvider extends ESignAdapter {
       envelopeId,
       title: params.title,
       signers,
-      status: 'awaiting_signature',
+      status: 'sent',
       providerStatus: 'awaiting_signature',
+      sentAt: new Date().toISOString(),
       documentContent: params.fileBytes && params.fileBytes.length > 0
         ? Buffer.concat(params.fileBytes.map((f) => f.content))
         : Buffer.from('Mock PDF content for ' + params.title),
@@ -77,7 +87,7 @@ export class MockESignProvider extends ESignAdapter {
       throw new EnvelopeNotFoundError(`Envelope ${envelopeId} not found`)
     }
 
-    envelope.status = 'awaiting_signature'
+    envelope.status = 'sent'
     envelope.providerStatus = 'awaiting_signature'
     envelope.sentAt = new Date().toISOString()
 
@@ -183,10 +193,77 @@ export class MockESignProvider extends ESignAdapter {
     }
   }
 
+  verifyWebhookSignature(payload: Buffer, signatureHeader: string): boolean {
+    const expected = crypto
+      .createHmac('sha256', this.webhookSecret)
+      .update(payload)
+      .digest('hex')
+
+    if (!signatureHeader) {
+      return false
+    }
+
+    try {
+      return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader))
+    } catch {
+      return false
+    }
+  }
+
+  parseWebhookEvent(payload: Buffer): WebhookEvent {
+    const raw: string = payload.toString('utf8')
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      throw new ESignProviderError('Invalid webhook payload: not valid JSON', false)
+    }
+
+    const sr = parsed.signature_request as Record<string, unknown> | undefined
+    const envelopeId = (sr?.signature_request_id as string | undefined) || (parsed.envelopeId as string | undefined)
+    if (!envelopeId) {
+      throw new ESignProviderError('Invalid webhook payload: missing signature_request_id', false)
+    }
+
+    const event = parsed.event as Record<string, unknown> | undefined
+    const rawEventType = event?.event_type as string | undefined
+
+    if (!rawEventType) {
+      throw new ESignProviderError('Invalid webhook payload: missing event_type', false)
+    }
+
+    const mockEventMap: Record<string, WebhookEvent['eventType']> = {
+      signature_request_sent: 'sent',
+      signature_request_viewed: 'viewed',
+      signature_request_signed: 'signed',
+      signature_request_declined: 'declined',
+      signature_request_expired: 'expired',
+      signature_request_canceled: 'voided',
+    }
+
+    const eventType = mockEventMap[rawEventType]
+    if (!eventType) {
+      throw new ESignProviderError(`Unknown webhook event type: ${rawEventType}`, false)
+    }
+
+    const eventTime = event?.event_time as string | undefined
+    const occurredAt = eventTime
+      ? new Date(Number(eventTime) * 1000).toISOString()
+      : new Date().toISOString()
+
+    return {
+      envelopeId,
+      eventType,
+      occurredAt,
+      providerRawEvent: rawEventType,
+    }
+  }
+
   mapProviderStatusToPlatform(providerStatus: string): PlatformSigningStatus {
     switch (providerStatus) {
       case 'awaiting_signature':
-        return 'awaiting_signature'
+      case 'awaiting_approval':
+        return 'sent'
       case 'signed':
         return 'signed'
       case 'declined':
@@ -254,13 +331,25 @@ export class MockESignProvider extends ESignAdapter {
       'platformStatus' in result
         ? result.platformStatus
         : result.status === 'sent'
-          ? 'awaiting_signature'
+          ? 'sent'
           : 'draft'
 
     const base: LegalDocumentUpdateFields = {
       provider_envelope_id: result.envelopeId,
       provider_status: 'providerStatus' in result ? result.providerStatus : '',
       platform_status: platformStatus,
+    }
+
+    if ('occurredAt' in result && result.occurredAt) {
+      const at = new Date(result.occurredAt)
+      switch (platformStatus) {
+        case 'sent': return { ...base, sent_at: at }
+        case 'viewed': return { ...base, viewed_at: at }
+        case 'signed': return { ...base, signed_at: at }
+        case 'declined': return { ...base, declined_at: at }
+        case 'expired': return { ...base, expired_at: at }
+        case 'voided': return { ...base, voided_at: at }
+      }
     }
 
     if ('sentAt' in result && result.sentAt) {

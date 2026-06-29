@@ -222,14 +222,14 @@ describe('DropboxSignAdapter - mapProviderStatusToPlatform', () => {
   })
 
   const cases: Array<[string, PlatformSigningStatus]> = [
-    ['awaiting_signature', 'awaiting_signature'],
-    ['awaiting_approval', 'awaiting_signature'],
+    ['awaiting_signature', 'sent'],
+    ['awaiting_approval', 'sent'],
     ['signed', 'signed'],
     ['declined', 'declined'],
     ['expired', 'expired'],
     ['voided', 'voided'],
     ['errored', 'error'],
-    ['sent', 'draft'],
+    ['sent', 'sent'],
     ['unknown_status', 'draft'],
   ]
 
@@ -389,7 +389,7 @@ describe('DropboxSignAdapter - parseStatusResponse', () => {
       },
     }
     const result = adapter.parseStatusResponse(response)
-    expect(result.platformStatus).toBe('awaiting_signature')
+    expect(result.platformStatus).toBe('sent')
     expect(result.signers).toEqual([])
   })
 })
@@ -844,7 +844,7 @@ describe('MockESignProvider', () => {
       })
 
       const status = await adapter.getSigningRequestStatus(created.envelopeId)
-      expect(status.platformStatus).toBe('awaiting_signature')
+      expect(status.platformStatus).toBe('sent')
       expect(status.envelopeId).toBe(created.envelopeId)
     })
 
@@ -1019,7 +1019,7 @@ describe('Provider-swap verification', () => {
     const mockAdapter = new MockProv()
 
     const mockResult = await exerciseProviderAdapter(mockAdapter)
-    expect(mockResult.platformStatus).toBe('awaiting_signature')
+    expect(mockResult.platformStatus).toBe('sent')
 
     const dropboxAdapter = new DropboxSignAdapter(TEST_API_KEY)
     const responseData = {
@@ -1047,7 +1047,7 @@ describe('Provider-swap verification', () => {
 
     const result = await exerciseProviderAdapter(adapter)
     expect(result.envelopeId).toMatch(/^mock_/)
-    expect(result.platformStatus).toBe('awaiting_signature')
+    expect(result.platformStatus).toBe('sent')
   })
 })
 
@@ -1317,5 +1317,355 @@ describe('Factory with mock provider', () => {
 
     const status = await adapter.getSigningRequestStatus(createResult.envelopeId)
     expect(status.platformStatus).toBe('voided')
+  })
+})
+
+const crypto = require('crypto')
+
+function validWebhookPayload(eventType: string, envelopeId = 'sr_wh_test'): string {
+  return JSON.stringify({
+    signature_request: { signature_request_id: envelopeId },
+    event: { event_type: eventType, event_time: Math.floor(Date.now() / 1000).toString() },
+  })
+}
+
+function computeSignature(payload: string, secret: string): string {
+  return crypto.createHmac('sha256', secret).update(Buffer.from(payload, 'utf-8')).digest('hex')
+}
+
+describe('DropboxSignAdapter - verifyWebhookSignature', () => {
+  let adapter: DropboxSignAdapter
+
+  beforeEach(() => {
+    adapter = new DropboxSignAdapter(TEST_API_KEY)
+  })
+
+  it('accepts a valid signature', () => {
+    const payload = validWebhookPayload('signature_request_signed')
+    const signature = computeSignature(payload, TEST_API_KEY)
+    expect(adapter.verifyWebhookSignature(Buffer.from(payload, 'utf-8'), signature)).toBe(true)
+  })
+
+  it('rejects an invalid signature', () => {
+    const payload = validWebhookPayload('signature_request_signed')
+    expect(adapter.verifyWebhookSignature(Buffer.from(payload, 'utf-8'), 'bad_signature')).toBe(false)
+  })
+
+  it('rejects when signature header is empty', () => {
+    const payload = validWebhookPayload('signature_request_signed')
+    expect(adapter.verifyWebhookSignature(Buffer.from(payload, 'utf-8'), '')).toBe(false)
+  })
+
+  it('returns false when API key is not configured', () => {
+    const adapterNoKey = new DropboxSignAdapter('')
+    const payload = validWebhookPayload('signature_request_signed')
+    const signature = computeSignature(payload, '')
+    expect(adapterNoKey.verifyWebhookSignature(Buffer.from(payload, 'utf-8'), signature)).toBe(false)
+  })
+})
+
+describe('DropboxSignAdapter - parseWebhookEvent', () => {
+  let adapter: DropboxSignAdapter
+
+  beforeEach(() => {
+    adapter = new DropboxSignAdapter(TEST_API_KEY)
+  })
+
+  it('parses signature_request_signed event', () => {
+    const payload = validWebhookPayload('signature_request_signed')
+    const event = adapter.parseWebhookEvent(Buffer.from(payload, 'utf-8'))
+    expect(event.envelopeId).toBe('sr_wh_test')
+    expect(event.eventType).toBe('signed')
+    expect(event.providerRawEvent).toBe('signature_request_signed')
+    expect(event.occurredAt).toBeTruthy()
+  })
+
+  it('parses signature_request_sent event', () => {
+    const payload = validWebhookPayload('signature_request_sent')
+    const event = adapter.parseWebhookEvent(Buffer.from(payload, 'utf-8'))
+    expect(event.eventType).toBe('sent')
+  })
+
+  it('parses signature_request_viewed event', () => {
+    const payload = validWebhookPayload('signature_request_viewed')
+    const event = adapter.parseWebhookEvent(Buffer.from(payload, 'utf-8'))
+    expect(event.eventType).toBe('viewed')
+  })
+
+  it('parses signature_request_declined event', () => {
+    const payload = validWebhookPayload('signature_request_declined')
+    const event = adapter.parseWebhookEvent(Buffer.from(payload, 'utf-8'))
+    expect(event.eventType).toBe('declined')
+  })
+
+  it('parses signature_request_expired event', () => {
+    const payload = validWebhookPayload('signature_request_expired')
+    const event = adapter.parseWebhookEvent(Buffer.from(payload, 'utf-8'))
+    expect(event.eventType).toBe('expired')
+  })
+
+  it('parses signature_request_canceled event', () => {
+    const payload = validWebhookPayload('signature_request_canceled')
+    const event = adapter.parseWebhookEvent(Buffer.from(payload, 'utf-8'))
+    expect(event.eventType).toBe('voided')
+  })
+
+  it('throws for invalid JSON', () => {
+    expect(() => adapter.parseWebhookEvent(Buffer.from('not-json', 'utf-8'))).toThrow('not valid JSON')
+  })
+
+  it('throws for missing signature_request_id', () => {
+    const payload = JSON.stringify({ event: { event_type: 'signature_request_signed' } })
+    expect(() => adapter.parseWebhookEvent(Buffer.from(payload, 'utf-8'))).toThrow('missing signature_request_id')
+  })
+
+  it('throws for missing event_type', () => {
+    const payload = JSON.stringify({ signature_request: { signature_request_id: 'sr_abc' } })
+    expect(() => adapter.parseWebhookEvent(Buffer.from(payload, 'utf-8'))).toThrow('missing event_type')
+  })
+
+  it('throws for unknown event type', () => {
+    const payload = JSON.stringify({
+      signature_request: { signature_request_id: 'sr_abc' },
+      event: { event_type: 'signature_request_unknown_event' },
+    })
+    expect(() => adapter.parseWebhookEvent(Buffer.from(payload, 'utf-8'))).toThrow('Unknown Dropbox Sign event type')
+  })
+})
+
+describe('DropboxSignAdapter - updated mapProviderStatusToPlatform', () => {
+  let adapter: DropboxSignAdapter
+
+  beforeEach(() => {
+    adapter = new DropboxSignAdapter(TEST_API_KEY)
+  })
+
+  const cases: Array<[string, PlatformSigningStatus]> = [
+    ['awaiting_signature', 'sent'],
+    ['awaiting_approval', 'sent'],
+    ['signed', 'signed'],
+    ['declined', 'declined'],
+    ['expired', 'expired'],
+    ['voided', 'voided'],
+    ['errored', 'error'],
+    ['sent', 'sent'],
+    ['unknown_status', 'draft'],
+  ]
+
+  it.each(cases)('maps %s to %s', (providerStatus, expected) => {
+    expect(adapter.mapProviderStatusToPlatform(providerStatus)).toBe(expected)
+  })
+})
+
+describe('DropboxSignAdapter - updated buildLegalDocumentUpdate', () => {
+  let adapter: DropboxSignAdapter
+
+  beforeEach(() => {
+    adapter = new DropboxSignAdapter(TEST_API_KEY)
+  })
+
+  it('sets sent_at when platformStatus is sent and occurredAt present', () => {
+    const result = {
+      envelopeId: 'sr_sent',
+      providerName: 'dropbox_sign' as const,
+      providerStatus: 'sent',
+      platformStatus: 'sent' as const,
+      signers: [],
+      occurredAt: '2026-06-29T12:00:00.000Z',
+    }
+    const update = adapter.buildLegalDocumentUpdate(result)
+    expect(update.sent_at).toEqual(new Date('2026-06-29T12:00:00.000Z'))
+    expect(update.platform_status).toBe('sent')
+  })
+
+  it('sets viewed_at when platformStatus is viewed and occurredAt present', () => {
+    const result = {
+      envelopeId: 'sr_viewed',
+      providerName: 'dropbox_sign' as const,
+      providerStatus: 'viewed',
+      platformStatus: 'viewed' as const,
+      signers: [],
+      occurredAt: '2026-06-29T13:00:00.000Z',
+    }
+    const update = adapter.buildLegalDocumentUpdate(result)
+    expect(update.viewed_at).toEqual(new Date('2026-06-29T13:00:00.000Z'))
+    expect(update.platform_status).toBe('viewed')
+  })
+
+  it('sets signed_at when platformStatus is signed and occurredAt present', () => {
+    const result = {
+      envelopeId: 'sr_signed',
+      providerName: 'dropbox_sign' as const,
+      providerStatus: 'signed',
+      platformStatus: 'signed' as const,
+      signers: [],
+      occurredAt: '2026-06-29T14:00:00.000Z',
+    }
+    const update = adapter.buildLegalDocumentUpdate(result)
+    expect(update.signed_at).toEqual(new Date('2026-06-29T14:00:00.000Z'))
+    expect(update.platform_status).toBe('signed')
+  })
+
+  it('sets platform_status sent for create result with status sent', () => {
+    const result = {
+      envelopeId: 'sr_create',
+      providerName: 'dropbox_sign' as const,
+      status: 'sent' as const,
+      sentAt: '2026-06-29T15:00:00.000Z',
+    }
+    const update = adapter.buildLegalDocumentUpdate(result)
+    expect(update.platform_status).toBe('sent')
+    expect(update.sent_at).toEqual(new Date('2026-06-29T15:00:00.000Z'))
+  })
+
+  it('sets platform_status draft for pending_send result', () => {
+    const result = {
+      envelopeId: 'sr_draft',
+      providerName: 'dropbox_sign' as const,
+      status: 'pending_send' as const,
+    }
+    const update = adapter.buildLegalDocumentUpdate(result)
+    expect(update.platform_status).toBe('draft')
+  })
+})
+
+describe('DropboxSignAdapter - updated parseCreateResponse with new status', () => {
+  let adapter: DropboxSignAdapter
+
+  beforeEach(() => {
+    adapter = new DropboxSignAdapter(TEST_API_KEY)
+  })
+
+  it('returns sent for awaiting_signature provider status', () => {
+    const response = {
+      signature_request: {
+        signature_request_id: 'sr_abc',
+        status: 'awaiting_signature',
+        signing_url: 'https://sign.example.com/abc',
+      },
+    }
+    const result = adapter.parseCreateResponse(response)
+    expect(result.status).toBe('sent')
+  })
+
+  it('returns sent for sent provider status', () => {
+    const response = {
+      signature_request: {
+        signature_request_id: 'sr_def',
+        status: 'sent',
+      },
+    }
+    const result = adapter.parseCreateResponse(response)
+    expect(result.status).toBe('sent')
+  })
+})
+
+describe('MockESignProvider - verifyWebhookSignature', () => {
+  let adapter: import('@/lib/esign/types').ESignAdapter
+  const MockProv = require('@/lib/esign/MockESignProvider').MockESignProvider
+
+  const MOCK_SECRET = 'mock-webhook-secret'
+
+  beforeEach(() => {
+    adapter = new MockProv(MOCK_SECRET)
+  })
+
+  it('accepts a valid signature', () => {
+    const payload = validWebhookPayload('signature_request_signed')
+    const signature = computeSignature(payload, MOCK_SECRET)
+    expect(adapter.verifyWebhookSignature(Buffer.from(payload, 'utf-8'), signature)).toBe(true)
+  })
+
+  it('rejects an invalid signature', () => {
+    const payload = validWebhookPayload('signature_request_signed')
+    expect(adapter.verifyWebhookSignature(Buffer.from(payload, 'utf-8'), 'bad_signature')).toBe(false)
+  })
+
+  it('rejects empty signature header', () => {
+    const payload = validWebhookPayload('signature_request_signed')
+    expect(adapter.verifyWebhookSignature(Buffer.from(payload, 'utf-8'), '')).toBe(false)
+  })
+})
+
+describe('MockESignProvider - parseWebhookEvent', () => {
+  let adapter: import('@/lib/esign/types').ESignAdapter
+  const MockProv = require('@/lib/esign/MockESignProvider').MockESignProvider
+
+  beforeEach(() => {
+    adapter = new MockProv()
+  })
+
+  it('parses a signed event', () => {
+    const payload = validWebhookPayload('signature_request_signed', 'mock_env_123')
+    const event = adapter.parseWebhookEvent(Buffer.from(payload, 'utf-8'))
+    expect(event.envelopeId).toBe('mock_env_123')
+    expect(event.eventType).toBe('signed')
+    expect(event.providerRawEvent).toBe('signature_request_signed')
+  })
+
+  it('parses viewed event', () => {
+    const payload = validWebhookPayload('signature_request_viewed')
+    const event = adapter.parseWebhookEvent(Buffer.from(payload, 'utf-8'))
+    expect(event.eventType).toBe('viewed')
+  })
+
+  it('throws for invalid JSON', () => {
+    expect(() => adapter.parseWebhookEvent(Buffer.from('bad', 'utf-8'))).toThrow('not valid JSON')
+  })
+
+  it('throws for missing event_type', () => {
+    const payload = JSON.stringify({ signature_request: { signature_request_id: 'mock_eid' } })
+    expect(() => adapter.parseWebhookEvent(Buffer.from(payload, 'utf-8'))).toThrow('missing event_type')
+  })
+
+  it('throws for unknown event type', () => {
+    const payload = JSON.stringify({
+      signature_request: { signature_request_id: 'mock_eid' },
+      event: { event_type: 'unknown_event' },
+    })
+    expect(() => adapter.parseWebhookEvent(Buffer.from(payload, 'utf-8'))).toThrow('Unknown webhook event type')
+  })
+})
+
+describe('MockESignProvider - updated mapProviderStatusToPlatform and buildLegalDocumentUpdate', () => {
+  let adapter: import('@/lib/esign/types').ESignAdapter
+  const MockProv = require('@/lib/esign/MockESignProvider').MockESignProvider
+
+  beforeEach(() => {
+    adapter = new MockProv()
+  })
+
+  it('maps awaiting_signature to sent', () => {
+    expect(adapter.mapProviderStatusToPlatform('awaiting_signature')).toBe('sent')
+  })
+
+  it('maps awaiting_approval to sent', () => {
+    expect(adapter.mapProviderStatusToPlatform('awaiting_approval')).toBe('sent')
+  })
+
+  it('builds update with sent platform from create result', () => {
+    const createResult = {
+      envelopeId: 'mock_eid',
+      providerName: 'mock' as const,
+      status: 'sent' as const,
+      sentAt: '2026-06-29T10:00:00.000Z',
+    }
+    const update = adapter.buildLegalDocumentUpdate(createResult)
+    expect(update.platform_status).toBe('sent')
+    expect(update.sent_at).toEqual(new Date('2026-06-29T10:00:00.000Z'))
+  })
+
+  it('builds update with viewed_at from occurredAt', () => {
+    const result = {
+      envelopeId: 'mock_eid',
+      providerName: 'mock' as const,
+      providerStatus: 'viewed',
+      platformStatus: 'viewed' as const,
+      signers: [],
+      occurredAt: '2026-06-29T11:00:00.000Z',
+    }
+    const update = adapter.buildLegalDocumentUpdate(result)
+    expect(update.platform_status).toBe('viewed')
+    expect(update.viewed_at).toEqual(new Date('2026-06-29T11:00:00.000Z'))
   })
 })
