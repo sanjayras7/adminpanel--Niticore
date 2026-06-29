@@ -167,9 +167,9 @@ describe('GET /api/v1/internal/wizard/prefill', () => {
     expect(body.data.step4[0]).toEqual({ moduleId: 'module-grc', enabled: true })
     expect(body.data.step4[1]).toEqual({ moduleId: 'module-risk', enabled: true })
 
-    expect(body.data.step5.selections).toHaveLength(2)
-    expect(body.data.step5.selections[0]).toEqual({ frameworkId: 'fw-nist', version: '1.0', control: null })
-    expect(body.data.step5.selections[1]).toEqual({ frameworkId: 'fw-iso', version: null, control: null })
+    expect(body.data.step5.framework_selections).toHaveLength(2)
+    expect(body.data.step5.framework_selections[0]).toEqual({ framework_id: 'fw-nist', framework_version_id: '1.0', control_ids: null, risk_threshold: 'medium' })
+    expect(body.data.step5.framework_selections[1]).toEqual({ framework_id: 'fw-iso', framework_version_id: null, control_ids: null, risk_threshold: 'medium' })
 
     expect(body.data.step6.domain).toBe('https://acme.com')
   })
@@ -269,8 +269,8 @@ describe('GET /api/v1/internal/wizard/prefill', () => {
     const body = await response.json()
 
     expect(response.status).toBe(200)
-    expect(body.data.step5.selections).toHaveLength(1)
-    expect(body.data.step5.selections[0].frameworkId).toBe('fw-known')
+    expect(body.data.step5.framework_selections).toHaveLength(1)
+    expect(body.data.step5.framework_selections[0].framework_id).toBe('fw-known')
   })
 
   it('handles interested_modules_json as array of strings', async () => {

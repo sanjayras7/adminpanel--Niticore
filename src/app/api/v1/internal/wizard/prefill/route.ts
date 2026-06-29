@@ -116,16 +116,22 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     .filter((fw): fw is NonNullable<typeof fw> => fw != null)
     .map((fw) => {
       if (typeof fw === 'string') {
-        return { frameworkId: fw, version: null, control: null }
+        return {
+          framework_id: fw,
+          framework_version_id: null,
+          control_ids: null,
+          risk_threshold: 'medium',
+        }
       }
       const f = fw as Record<string, unknown>
       return {
-        frameworkId: (f.id as string) || (f.frameworkId as string) || '',
-        version: (f.version as string) || null,
-        control: (f.control as string) || null,
+        framework_id: (f.id as string) || (f.frameworkId as string) || '',
+        framework_version_id: (f.version as string) || null,
+        control_ids: (f.control as string) ? [f.control as string] : null,
+        risk_threshold: 'medium',
       }
-    }).filter((f) => f.frameworkId)
-  const step5: Partial<FrameworkStepData> = { selections: step5Selections }
+    }).filter((f) => f.framework_id)
+  const step5: Partial<FrameworkStepData> = { framework_selections: step5Selections }
 
   const step6: Partial<IntegrationIntentData> = {}
   if (lead.company_website) step6.domain = lead.company_website

@@ -52,7 +52,7 @@ export interface IntegrationIntentData {
 
 export interface WizardPrefillResponse {
   leadId: string
-  organizationId: string | null
+  organizationId: string
   step1?: Partial<CustomerProfileData>
   step2?: Partial<PlanLifecycleData>
   step3?: Partial<AdminRequestBody>
