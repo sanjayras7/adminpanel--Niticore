@@ -22,6 +22,7 @@ export interface LegalDocumentAttributes {
   file_name: string | null
   file_type: string | null
   file_size_bytes: number | null
+  retention: string | null
   created_by: string | null
   created_at: Date
   updated_at: Date
@@ -71,6 +72,7 @@ export class LegalDocument extends Model<LegalDocumentAttributes> implements Leg
   declare file_name: string | null
   declare file_type: string | null
   declare file_size_bytes: number | null
+  declare retention: string | null
   declare created_by: string | null
   declare created_at: Date
   declare updated_at: Date
@@ -103,6 +105,7 @@ LegalDocument.init(
     file_name: { type: DataTypes.STRING(255), allowNull: true },
     file_type: { type: DataTypes.STRING(100), allowNull: true },
     file_size_bytes: { type: DataTypes.BIGINT, allowNull: true },
+    retention: { type: DataTypes.STRING(20), allowNull: true },
     created_by: { type: DataTypes.UUID, allowNull: true },
     created_at: { type: DataTypes.DATE, allowNull: false },
     updated_at: { type: DataTypes.DATE, allowNull: false },
