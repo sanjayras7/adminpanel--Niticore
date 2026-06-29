@@ -5,6 +5,8 @@ import { InternalAuditEvent } from './InternalAuditEvent'
 import { InternalSession } from './InternalSession'
 import { Lead } from './Lead'
 import { LeadNote } from './LeadNote'
+import { Notification } from './Notification'
+import { initNotificationDispatcher } from '@/lib/notifications'
 import { LegalDocument } from './LegalDocument'
 import { OrganizationAdminInvite } from './OrganizationAdminInvite'
 import { Module } from './Module'
@@ -24,6 +26,7 @@ export {
   InternalSession,
   Lead,
   LeadNote,
+  Notification,
   LegalDocument,
   OrganizationAdminInvite,
   Module,
@@ -41,6 +44,11 @@ export function initModels(): void {
   InternalSession
   Lead
   LeadNote
+  Notification
+
+  if (process.env.NODE_ENV !== 'test') {
+    initNotificationDispatcher()
+  }
   LegalDocument
   OrganizationAdminInvite
   Module
