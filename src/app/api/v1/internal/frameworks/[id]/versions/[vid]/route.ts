@@ -4,6 +4,7 @@ import { Op } from 'sequelize'
 import { FrameworkVersion, FrameworkSection, FrameworkClause } from '@/lib/models'
 import { getAuthUser, requireMutationAuth } from '@/lib/auth'
 import { writeAuditEvent } from '@/lib/audit'
+import { cloneVersion } from '@/lib/framework-versioning'
 
 async function getVersionOr404(vid: string) {
   const version = await FrameworkVersion.findByPk(vid, {
@@ -19,81 +20,6 @@ async function getVersionOr404(vid: string) {
     ],
   })
   return version
-}
-
-async function cloneVersion(version: FrameworkVersion): Promise<FrameworkVersion> {
-  const sections = await FrameworkSection.findAll({
-    where: { framework_version_id: version.id },
-    include: [{ model: FrameworkClause, as: 'clauses' }],
-  })
-
-  const newVersion = await FrameworkVersion.create({
-    id: uuidv4(),
-    framework_id: version.framework_id,
-    version_label: `${version.version_label}-draft-${Date.now()}`,
-    description: version.description,
-    effective_date: version.effective_date,
-    status: 'draft',
-  } as FrameworkVersion)
-
-  const sectionIdMap = new Map<string, string>()
-
-  const rootSections = sections.filter((s) => !s.parent_section_id)
-  for (const section of rootSections) {
-    const newSectionId = uuidv4()
-    sectionIdMap.set(section.id, newSectionId)
-
-    await FrameworkSection.create({
-      id: newSectionId,
-      framework_version_id: newVersion.id,
-      parent_section_id: null,
-      section_code: section.section_code,
-      title: section.title,
-      description: section.description,
-      sort_order: section.sort_order,
-    } as FrameworkSection)
-
-    for (const clause of (section.get('clauses') as FrameworkClause[]) || []) {
-      await FrameworkClause.create({
-        id: uuidv4(),
-        framework_section_id: newSectionId,
-        clause_code: clause.clause_code,
-        clause_text: clause.clause_text,
-        sort_order: clause.sort_order,
-      } as FrameworkClause)
-    }
-  }
-
-  const childSections = sections.filter((s) => s.parent_section_id)
-  for (const section of childSections) {
-    const newParentId = sectionIdMap.get(section.parent_section_id!)
-    if (!newParentId) continue
-
-    const newSectionId = uuidv4()
-    sectionIdMap.set(section.id, newSectionId)
-
-    await FrameworkSection.create({
-      id: newSectionId,
-      framework_version_id: newVersion.id,
-      parent_section_id: newParentId,
-      section_code: section.section_code,
-      title: section.title,
-      description: section.description,
-      sort_order: section.sort_order,
-    } as FrameworkSection)
-
-    for (const clause of (section.get('clauses') as FrameworkClause[]) || []) {
-      await FrameworkClause.create({
-        id: uuidv4(),
-        framework_section_id: newSectionId,
-        clause_code: clause.clause_code,
-        clause_text: clause.clause_text,
-        sort_order: clause.sort_order,
-      } as FrameworkClause)
-    }
-  }
-
-  return newVersion
 }
 
 function buildSectionTree(sections: FrameworkSection[]): Record<string, unknown>[] {
@@ -214,13 +140,12 @@ export async function PUT(
     }
 
     if (version.status !== 'draft') {
-      const newVersion = await cloneVersion(version)
+      const { newVersion } = await cloneVersion(version)
       return NextResponse.json({
-        error: 'version_cloned',
-        message: 'Version is not a draft. A new draft version has been created with your changes.',
-        cloned_version_id: newVersion.id,
-        cloned_from_version_id: version.id,
-      }, { status: 200 })
+        data: Object.assign(newVersion.toJSON(), {
+          cloned_from_version_id: version.id,
+        }),
+      }, { status: 201 })
     }
 
     const beforeValues = {

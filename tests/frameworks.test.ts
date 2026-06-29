@@ -1,3 +1,4 @@
+import { Op } from 'sequelize'
 import { checkRateLimit, resetRateLimiter } from '@/lib/rate-limiter'
 
 beforeEach(() => {
@@ -277,10 +278,12 @@ describe('Framework CRUD route handlers', () => {
       }))
 
       const { GET } = await import('@/app/api/v1/internal/frameworks/route')
-      const request = new Request('http://localhost/api/v1/internal/frameworks?search=test') as never
+      const request = new Request('http://localhost/api/v1/internal/frameworks?search=NIST') as never
       await GET(request)
 
-      expect(capturedWhere.name).toBeDefined()
+      const nameFilter = capturedWhere.name as Record<string, unknown>
+      expect(nameFilter).toBeDefined()
+      expect(nameFilter[Op.iLike as unknown as string]).toBe('%NIST%')
     })
   })
 
@@ -907,6 +910,212 @@ describe('Framework CRUD route handlers', () => {
 
       expect(response.status).toBe(400)
       expect(body.error).toBe('invalid_request')
+    })
+  })
+
+  describe('Auto-clone on edit (versioning rule)', () => {
+    beforeEach(() => {
+      jest.resetModules()
+    })
+
+    it('mutates draft version in-place (no clone)', async () => {
+      let createdVersionCalled = false
+      jest.doMock('@/lib/auth', () => ({
+        getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+        requireMutationAuth: jest.fn(),
+      }))
+
+      const draftVersion = {
+        ...mockVersion,
+        status: 'draft',
+        save: jest.fn().mockResolvedValue(undefined),
+        toJSON: function () { return { ...this, save: undefined, toJSON: undefined } },
+      }
+
+      jest.doMock('@/lib/models', () => ({
+        FrameworkVersion: {
+          findByPk: jest.fn().mockResolvedValue(draftVersion),
+        },
+        FrameworkSection: {
+          findOne: jest.fn().mockResolvedValue(mockSection),
+          create: jest.fn().mockImplementation(() => {
+            createdVersionCalled = true
+            return Promise.resolve(mockSection)
+          }),
+        },
+        FrameworkClause: {},
+      }))
+
+      jest.doMock('@/lib/framework-versioning', () => ({
+        ensureDraftVersion: jest.fn().mockImplementation((v: { status: string }) => {
+          if (v.status !== 'draft') {
+            const newV = { ...v, id: 'new-ver-cloned', status: 'draft' }
+            return Promise.resolve({ version: newV, wasCloned: true, sectionIdMap: new Map() })
+          }
+          return Promise.resolve({ version: v, wasCloned: false })
+        }),
+        cloneVersion: jest.fn(),
+      }))
+
+      jest.doMock('@/lib/audit', () => ({
+        writeAuditEvent: jest.fn().mockResolvedValue(undefined),
+      }))
+
+      const { POST } = await import('@/app/api/v1/internal/frameworks/[id]/versions/[vid]/sections/route')
+      const request = new Request('http://localhost/api/v1/internal/frameworks/fw-1/versions/ver-1/sections', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+        body: JSON.stringify({ section_code: 'AC-2', title: 'Access Control 2' }),
+      }) as never
+
+      const response = await POST(request, { params: { id: 'fw-1', vid: 'ver-1' } })
+      const body = await response.json()
+
+      expect(response.status).toBe(201)
+      expect(body.data.section_code).toBe('AC-1')
+    })
+
+    it('clones version and creates section on active version', async () => {
+      jest.doMock('@/lib/auth', () => ({
+        getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+        requireMutationAuth: jest.fn(),
+      }))
+
+      const activeVersion = { ...mockVersion, status: 'active', save: jest.fn() }
+      const clonedVersion = { ...mockVersion, id: 'new-ver-cloned', status: 'draft', save: jest.fn() }
+
+      jest.doMock('@/lib/models', () => ({
+        FrameworkVersion: {
+          findByPk: jest.fn().mockResolvedValue(activeVersion),
+        },
+        FrameworkSection: {
+          create: jest.fn().mockResolvedValue(mockSection),
+        },
+        FrameworkClause: {},
+      }))
+
+      jest.doMock('@/lib/framework-versioning', () => ({
+        ensureDraftVersion: jest.fn().mockResolvedValue({
+          version: clonedVersion,
+          wasCloned: true,
+          sectionIdMap: new Map(),
+        }),
+        cloneVersion: jest.fn(),
+      }))
+
+      jest.doMock('@/lib/audit', () => ({
+        writeAuditEvent: jest.fn().mockResolvedValue(undefined),
+      }))
+
+      const { POST } = await import('@/app/api/v1/internal/frameworks/[id]/versions/[vid]/sections/route')
+      const request = new Request('http://localhost/api/v1/internal/frameworks/fw-1/versions/ver-1/sections', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+        body: JSON.stringify({ section_code: 'AC-2', title: 'Access Control 2' }),
+      }) as never
+
+      const response = await POST(request, { params: { id: 'fw-1', vid: 'ver-1' } })
+      const body = await response.json()
+
+      expect(body.cloned_version_id).toBe('new-ver-cloned')
+    })
+
+    it('updates section on active version returns cloned_version_id', async () => {
+      jest.doMock('@/lib/auth', () => ({
+        getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+        requireMutationAuth: jest.fn(),
+      }))
+
+      const activeVersion = { ...mockVersion, status: 'active', save: jest.fn() }
+      const clonedVersion = { ...mockVersion, id: 'new-ver-cloned', status: 'draft', save: jest.fn() }
+      const sectionIdMap = new Map<string, string>()
+      sectionIdMap.set('sec-1', 'sec-1-cloned')
+
+      jest.doMock('@/lib/models', () => ({
+        FrameworkVersion: {
+          findByPk: jest.fn().mockResolvedValue(activeVersion),
+        },
+        FrameworkSection: {
+          findOne: jest.fn().mockResolvedValue(mockSection),
+          findByPk: jest.fn().mockImplementation((id: string) => {
+            if (id === 'sec-1-cloned') return Promise.resolve({ ...mockSection, id: 'sec-1-cloned', save: jest.fn(), toJSON: function () { return { ...this, save: undefined, toJSON: undefined } } })
+            return Promise.resolve(null)
+          }),
+        },
+        FrameworkClause: {},
+      }))
+
+      jest.doMock('@/lib/framework-versioning', () => ({
+        ensureDraftVersion: jest.fn().mockResolvedValue({
+          version: clonedVersion,
+          wasCloned: true,
+          sectionIdMap,
+        }),
+        cloneVersion: jest.fn(),
+      }))
+
+      jest.doMock('@/lib/audit', () => ({
+        writeAuditEvent: jest.fn().mockResolvedValue(undefined),
+      }))
+
+      const { PUT } = await import('@/app/api/v1/internal/frameworks/[id]/versions/[vid]/sections/[sid]/route')
+      const request = new Request('http://localhost/api/v1/internal/frameworks/fw-1/versions/ver-1/sections/sec-1', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+        body: JSON.stringify({ title: 'Updated Title' }),
+      }) as never
+
+      const response = await PUT(request, { params: { id: 'fw-1', vid: 'ver-1', sid: 'sec-1' } })
+      const body = await response.json()
+
+      expect(body.cloned_version_id).toBe('new-ver-cloned')
+      expect(body.data).toBeDefined()
+    })
+
+    it('returns 201 with cloned_from_version_id on version metadata update for active version', async () => {
+      jest.doMock('@/lib/auth', () => ({
+        getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+        requireMutationAuth: jest.fn(),
+      }))
+
+      const activeVersion = { ...mockVersion, status: 'active', save: jest.fn() }
+      const newDraftVersion = {
+        ...mockVersion,
+        id: 'new-ver-2',
+        status: 'draft',
+        save: jest.fn(),
+        toJSON: function () { return { ...this, save: undefined, toJSON: undefined, cloned_from_version_id: 'ver-1' } },
+      }
+
+      jest.doMock('@/lib/models', () => ({
+        FrameworkVersion: {
+          findByPk: jest.fn().mockResolvedValue(activeVersion),
+        },
+        FrameworkSection: {},
+        FrameworkClause: {},
+      }))
+
+      jest.doMock('@/lib/framework-versioning', () => ({
+        cloneVersion: jest.fn().mockResolvedValue({ newVersion: newDraftVersion, sectionIdMap: new Map() }),
+        ensureDraftVersion: jest.fn(),
+      }))
+
+      jest.doMock('@/lib/audit', () => ({
+        writeAuditEvent: jest.fn().mockResolvedValue(undefined),
+      }))
+
+      const { PUT } = await import('@/app/api/v1/internal/frameworks/[id]/versions/[vid]/route')
+      const request = new Request('http://localhost/api/v1/internal/frameworks/fw-1/versions/ver-1', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+        body: JSON.stringify({ description: 'Updated description' }),
+      }) as never
+
+      const response = await PUT(request, { params: { id: 'fw-1', vid: 'ver-1' } })
+      const body = await response.json()
+
+      expect(response.status).toBe(201)
+      expect(body.data.cloned_from_version_id).toBe('ver-1')
     })
   })
 
