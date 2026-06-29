@@ -1,13 +1,15 @@
+import jwt from 'jsonwebtoken'
 import { NextRequest } from 'next/server'
+import { config } from '@/config'
 import { InternalUser, InternalRole } from '@/lib/models'
 
 export interface AuthUser {
   id: string
-  name: string
-  surname: string
+  name?: string
+  surname?: string
   email: string
   internal_role_id: string | null
-  roleName: string | null
+  roleName?: string | null
 }
 
 export class AuthError extends Error {
@@ -20,6 +22,7 @@ export class AuthError extends Error {
   }
 }
 
+// Backend API authentication - uses x-internal-user-id header
 export async function getAuthUser(request: NextRequest): Promise<AuthUser> {
   const userId = request.headers.get('x-internal-user-id')
   if (!userId) {
@@ -52,20 +55,50 @@ export function requireMutationAuth(authUser: AuthUser): void {
   }
 }
 
-const PERMISSION_ROLES: Record<string, string[]> = {
-  'tenant:change_status': ['Super Admin', 'Implementation Manager'],
+// Frontend session authentication - uses JWT Bearer token
+export async function authenticateRequest(request: NextRequest): Promise<AuthUser | null> {
+  const authHeader = request.headers.get('authorization')
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null
+  }
+
+  const token = authHeader.slice(7)
+  if (!token) {
+    return null
+  }
+
+  try {
+    const payload = jwt.verify(token, config.jwt.internalAuthSecret) as {
+      sub: string
+    }
+
+    const user = await InternalUser.findByPk(payload.sub, {
+      attributes: ['id', 'name', 'surname', 'email', 'internal_role_id'],
+      include: [{ model: InternalRole, as: 'role', attributes: ['name'] }],
+      rejectOnEmpty: false,
+    })
+
+    if (!user) {
+      return null
+    }
+
+    const role = user.get('role') as InternalRole | null
+
+    return {
+      id: user.id,
+      name: user.name,
+      surname: user.surname,
+      email: user.email,
+      internal_role_id: user.internal_role_id,
+      roleName: role?.name ?? null,
+    }
+  } catch {
+    return null
+  }
 }
 
-export function requirePermission(action: string, authUser: AuthUser): void {
-  const allowedRoles = PERMISSION_ROLES[action]
-  if (!allowedRoles) {
-    throw new AuthError(`Unknown permission action: ${action}`, 403)
+export function requireSuperAdmin(authUser: AuthUser): void {
+  if (authUser.roleName !== 'Super Admin') {
+    throw new AuthError('Only Super Admin can override gates', 403)
   }
-  if (!authUser.roleName || !allowedRoles.includes(authUser.roleName)) {
-    throw new AuthError('Your role does not have permission to change tenant status.', 403)
-  }
-}
-
-export function canChangeTerminalStatus(authUser: AuthUser): boolean {
-  return authUser.roleName === 'Super Admin'
 }
