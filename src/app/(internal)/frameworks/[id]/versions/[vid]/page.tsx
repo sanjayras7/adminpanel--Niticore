@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useAuth } from '@/lib/frontend/auth-context'
+import { useAuth } from '@/lib/auth/AuthContext'
 import {
   getVersion, updateVersion,
   createSection, updateSection, deleteSection,
@@ -23,7 +23,8 @@ export default function VersionDetailPage() {
   const router = useRouter()
   const frameworkId = params.id as string
   const versionId = params.vid as string
-  const { canMutate } = useAuth()
+  const { user } = useAuth()
+  const canMutate = user.role !== 'Read-only Auditor'
 
   const [version, setVersion] = useState<VersionDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -61,7 +62,7 @@ export default function VersionDetailPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await getVersion(frameworkId, versionId)
+      const res = await getVersion(frameworkId, versionId, user.id)
       setVersion(res.data)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load version')
@@ -90,7 +91,7 @@ export default function VersionDetailPage() {
         version_label: metaLabel.trim() || undefined,
         description: metaDesc || undefined,
         effective_date: metaDate || undefined,
-      })
+      }, user.id)
       setEditingMeta(false)
       if ((res.data as Record<string, unknown>).cloned_from_version_id) {
         const newId = (res.data as Record<string, unknown>).cloned_from_version_id as string
@@ -112,7 +113,7 @@ export default function VersionDetailPage() {
         title: sectionTitle.trim(),
         description: sectionDesc.trim() || undefined,
         parent_section_id: sectionParent || undefined,
-      })
+      }, user.id)
       setAddingSection(false)
       setSectionCode('')
       setSectionTitle('')
@@ -137,7 +138,7 @@ export default function VersionDetailPage() {
         section_code: editSectionCode.trim() || undefined,
         title: editSectionTitle.trim() || undefined,
         description: editSectionDesc || undefined,
-      })
+      }, user.id)
       setEditingSection(null)
       if ((res as unknown as Record<string, unknown>).cloned_version_id) {
         const newId = (res as unknown as Record<string, unknown>).cloned_version_id as string
@@ -153,7 +154,7 @@ export default function VersionDetailPage() {
   const handleDeleteSection = async (sid: string, code: string) => {
     if (!confirm(`Delete section "${code}"?`)) return
     try {
-      await deleteSection(frameworkId, versionId, sid)
+      await deleteSection(frameworkId, versionId, sid, user.id)
       await load()
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to delete section')
@@ -167,7 +168,7 @@ export default function VersionDetailPage() {
       const res = await createClause(frameworkId, versionId, addingClause, {
         clause_code: clauseCode.trim(),
         clause_text: clauseText.trim(),
-      })
+      }, user.id)
       setAddingClause(null)
       setClauseCode('')
       setClauseText('')
@@ -189,7 +190,7 @@ export default function VersionDetailPage() {
       const res = await updateClause(frameworkId, versionId, editClauseSection, editingClause, {
         clause_code: editClauseCode.trim() || undefined,
         clause_text: editClauseText.trim() || undefined,
-      })
+      }, user.id)
       setEditingClause(null)
       setEditClauseSection('')
       if ((res as unknown as Record<string, unknown>).cloned_version_id) {
@@ -206,7 +207,7 @@ export default function VersionDetailPage() {
   const handleDeleteClause = async (sid: string, cid: string) => {
     if (!confirm('Delete this clause?')) return
     try {
-      await deleteClause(frameworkId, versionId, sid, cid)
+      await deleteClause(frameworkId, versionId, sid, cid, user.id)
       await load()
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to delete clause')
@@ -216,7 +217,7 @@ export default function VersionDetailPage() {
   const handlePublish = async () => {
     if (!confirm('Publish this version?')) return
     try {
-      await publishVersion(frameworkId, versionId)
+      await publishVersion(frameworkId, versionId, user.id)
       setActionMsg('Version published.')
       await load()
     } catch (err: unknown) {

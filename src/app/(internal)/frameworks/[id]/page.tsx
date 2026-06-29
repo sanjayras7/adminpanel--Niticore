@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useAuth } from '@/lib/frontend/auth-context'
+import { useAuth } from '@/lib/auth/AuthContext'
 import { getFramework, createVersion, deleteVersion, publishVersion, type FrameworkDetail, type VersionSummary } from '@/lib/frontend/api'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
@@ -15,7 +15,8 @@ const statusColors: Record<string, string> = {
 export default function FrameworkDetailPage() {
   const params = useParams()
   const id = params.id as string
-  const { canMutate } = useAuth()
+  const { user } = useAuth()
+  const canMutate = user.role !== 'Read-only Auditor'
   const [framework, setFramework] = useState<FrameworkDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -30,7 +31,7 @@ export default function FrameworkDetailPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await getFramework(id)
+      const res = await getFramework(id, user.id)
       setFramework(res.data)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load framework')
@@ -52,7 +53,7 @@ export default function FrameworkDetailPage() {
         version_label: versionLabel.trim(),
         description: versionDesc.trim() || undefined,
         effective_date: effectiveDate || undefined,
-      })
+      }, user.id)
       setShowCreate(false)
       setVersionLabel('')
       setVersionDesc('')
@@ -68,7 +69,7 @@ export default function FrameworkDetailPage() {
   const handleDeleteVersion = async (v: VersionSummary) => {
     if (!confirm(`Delete version "${v.version_label}"?`)) return
     try {
-      await deleteVersion(id, v.id)
+      await deleteVersion(id, v.id, user.id)
       await load()
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to delete version')
@@ -78,7 +79,7 @@ export default function FrameworkDetailPage() {
   const handlePublish = async (v: VersionSummary) => {
     if (!confirm(`Publish version "${v.version_label}"? This cannot be undone.`)) return
     try {
-      await publishVersion(id, v.id)
+      await publishVersion(id, v.id, user.id)
       setActionMsg(`Version "${v.version_label}" published.`)
       await load()
     } catch (err: unknown) {

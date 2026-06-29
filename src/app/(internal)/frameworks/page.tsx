@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useAuth } from '@/lib/frontend/auth-context'
+import { useAuth } from '@/lib/auth/AuthContext'
 import { listFrameworks, createFramework, deleteFramework, type FrameworkItem } from '@/lib/frontend/api'
 import Link from 'next/link'
 
 export default function FrameworkListPage() {
-  const { canMutate } = useAuth()
+  const { user } = useAuth()
+  const canMutate = user.role !== 'Read-only Auditor'
   const [frameworks, setFrameworks] = useState<FrameworkItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -24,7 +25,7 @@ export default function FrameworkListPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await listFrameworks({ search: search || undefined, page, page_size: pageSize })
+      const res = await listFrameworks({ search: search || undefined, page, page_size: pageSize }, user.id)
       setFrameworks(res.data)
       setTotal(res.total)
     } catch (err: unknown) {
@@ -44,7 +45,7 @@ export default function FrameworkListPage() {
     if (!createName.trim()) return
     setCreating(true)
     try {
-      await createFramework({ name: createName.trim(), description: createDesc.trim() || undefined })
+      await createFramework({ name: createName.trim(), description: createDesc.trim() || undefined }, user.id)
       setShowCreate(false)
       setCreateName('')
       setCreateDesc('')
@@ -60,7 +61,7 @@ export default function FrameworkListPage() {
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(`Delete framework "${name}"? This cannot be undone.`)) return
     try {
-      await deleteFramework(id)
+      await deleteFramework(id, user.id)
       await load()
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to delete framework')
