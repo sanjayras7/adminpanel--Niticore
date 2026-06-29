@@ -11,6 +11,10 @@ import { Module } from './Module'
 import { OrganizationModuleConfig } from './OrganizationModuleConfig'
 import { OrganizationFrameworkSelection } from './OrganizationFrameworkSelection'
 import { OrganizationIntegrationIntent } from './OrganizationIntegrationIntent'
+import { WizardState } from './WizardState'
+
+InternalUser.belongsTo(InternalRole, { foreignKey: 'internal_role_id', as: 'role' })
+InternalRole.hasMany(InternalUser, { foreignKey: 'internal_role_id', as: 'users' })
 
 export {
   InternalUser,
@@ -26,6 +30,7 @@ export {
   OrganizationModuleConfig,
   OrganizationFrameworkSelection,
   OrganizationIntegrationIntent,
+  WizardState,
 }
 
 export function initModels(): void {
@@ -42,4 +47,5 @@ export function initModels(): void {
   OrganizationModuleConfig
   OrganizationFrameworkSelection
   OrganizationIntegrationIntent
+  WizardState
 }
