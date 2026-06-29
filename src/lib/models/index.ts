@@ -19,10 +19,23 @@ import { OrganizationModuleConfig } from './OrganizationModuleConfig'
 import { OrganizationFrameworkSelection } from './OrganizationFrameworkSelection'
 import { OrganizationIntegrationIntent } from './OrganizationIntegrationIntent'
 import { WizardState } from './WizardState'
+import { Control } from './Control'
+import { ControlVersion } from './ControlVersion'
+import { ControlImplementationStep } from './ControlImplementationStep'
+import { ControlStepCategory } from './ControlStepCategory'
+import { ControlEvidenceType } from './ControlEvidenceType'
 
 InternalUser.belongsTo(InternalRole, { foreignKey: 'internal_role_id', as: 'role' })
 InternalRole.hasMany(InternalUser, { foreignKey: 'internal_role_id', as: 'users' })
 
+Control.hasMany(ControlVersion, { foreignKey: 'control_id', as: 'versions' })
+ControlVersion.belongsTo(Control, { foreignKey: 'control_id', as: 'control' })
+ControlVersion.hasMany(ControlImplementationStep, { foreignKey: 'control_version_id', as: 'implementationSteps' })
+ControlImplementationStep.belongsTo(ControlVersion, { foreignKey: 'control_version_id', as: 'version' })
+ControlVersion.hasMany(ControlEvidenceType, { foreignKey: 'control_version_id', as: 'evidenceTypes' })
+ControlEvidenceType.belongsTo(ControlVersion, { foreignKey: 'control_version_id', as: 'version' })
+ControlImplementationStep.belongsTo(ControlStepCategory, { foreignKey: 'category_id', as: 'category' })
+ControlStepCategory.hasMany(ControlImplementationStep, { foreignKey: 'category_id', as: 'steps' })
 Framework.hasMany(FrameworkVersion, { foreignKey: 'framework_id', as: 'versions' })
 FrameworkVersion.belongsTo(Framework, { foreignKey: 'framework_id', as: 'framework' })
 
@@ -51,6 +64,11 @@ export {
   OrganizationFrameworkSelection,
   OrganizationIntegrationIntent,
   WizardState,
+  Control,
+  ControlVersion,
+  ControlImplementationStep,
+  ControlStepCategory,
+  ControlEvidenceType,
   Framework,
   FrameworkClassification,
   FrameworkVersion,
@@ -78,6 +96,12 @@ export function initModels(): void {
   OrganizationFrameworkSelection
   OrganizationIntegrationIntent
   WizardState
+  Control
+  ControlVersion
+  ControlImplementationStep
+  ControlStepCategory
+  ControlEvidenceType
+}
   Framework
   FrameworkClassification
   FrameworkVersion
