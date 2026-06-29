@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Lead } from '@/lib/models/Lead'
 import { requirePermission } from '@/lib/auth/requirePermission'
 import { logAuditEvent } from '@/lib/audit'
-import { isValidStatus, isSameStatus, validateTransition } from '@/lib/lead-status'
+import { isValidStatus, isSameStatus, validateTransition, LEAD_STATUSES, LeadStatus } from '@/lib/lead-status'
 import type { InternalSessionUser } from '@/lib/auth/session'
 
 const VALID_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -44,13 +44,13 @@ async function handler(
     return NextResponse.json(
       {
         error: 'invalid_status',
-        message: `Invalid status. Must be one of: ${['New', 'Contacted', 'Engaged', 'Negotiation', 'Converted_to_Tenant', 'Disqualified', 'Archived'].join(', ')}`,
+        message: `Invalid status. Must be one of: ${LEAD_STATUSES.join(', ')}`,
       },
       { status: 422 },
     )
   }
 
-  const nextStatus = body.status
+  const nextStatus = body.status as LeadStatus
 
   let lead: Lead | null
   try {

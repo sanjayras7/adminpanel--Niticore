@@ -1,6 +1,6 @@
 jest.mock('@/lib/auth/session', () => ({
   getInternalSession: jest.fn(),
-  isSessionError: jest.requireActual('@/lib/auth/session').isSessionError,
+  isSessionError: jest.fn((result: any) => result && typeof result === 'object' && 'error' in result),
 }))
 
 jest.mock('@/lib/audit', () => ({
@@ -9,6 +9,15 @@ jest.mock('@/lib/audit', () => ({
 
 jest.mock('@/lib/onboard-organization', () => ({
   niticore_onboard_organization: jest.fn(),
+}))
+
+jest.mock('@/lib/sequelize', () => ({
+  sequelize: {
+    transaction: jest.fn(async (callback: (t: any) => Promise<any>) => {
+      const t = {}
+      return callback(t)
+    }),
+  },
 }))
 
 import { NextRequest } from 'next/server'
@@ -658,7 +667,7 @@ describe('POST /api/v1/internal/leads/:id/convert', () => {
       const response = await convertHandler(makeConvertRequest({ reason: 'Qualified' }))
       expect(response.status).toBe(500)
       const body = await response.json()
-      expect(body.error).toBe('provisioning_failed')
+      expect(body.error).toBe('conversion_failed')
       expect(lead.status).toBe('Negotiation')
       expect(lead.converted_organization_id).toBeNull()
       expect(mockLeadSave).not.toHaveBeenCalled()

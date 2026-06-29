@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth/requirePermission'
 import { logAuditEvent } from '@/lib/audit'
 import { isValidStatus } from '@/lib/lead-status'
 import { niticore_onboard_organization } from '@/lib/onboard-organization'
+import { sequelize } from '@/lib/sequelize'
 import type { InternalSessionUser } from '@/lib/auth/session'
 
 const VALID_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -102,42 +103,38 @@ async function handler(
   }
 
   let organizationId: string
-  try {
-    organizationId = await niticore_onboard_organization({
-      company_name: lead.company_name,
-      contact_first_name: lead.contact_first_name,
-      contact_last_name: lead.contact_last_name,
-      work_email: lead.work_email,
-      company_domain: lead.company_domain,
-      region: lead.region,
-      company_size: lead.company_size,
-      interested_modules_json: lead.interested_modules_json,
-      interested_frameworks_json: lead.interested_frameworks_json,
-      plan: body.plan,
-      billing_ref: body.billing_ref,
-      contract_start_date: body.contract_start_date,
-      contract_end_date: body.contract_end_date,
-      primary_admin_name: body.primary_admin_name,
-      primary_admin_email: body.primary_admin_email,
-    })
-  } catch (err) {
-    console.error('[LEAD_CONVERT] Organization provisioning failed:', err)
-    return NextResponse.json(
-      { error: 'provisioning_failed', message: 'Failed to provision organization. Conversion aborted.' },
-      { status: 500 },
-    )
-  }
-
   const previousStatus = lead.status
   try {
-    lead.status = 'Converted_to_Tenant'
-    lead.converted_organization_id = organizationId
-    lead.updated_at = new Date()
-    await lead.save()
+    organizationId = await sequelize.transaction(async (t) => {
+      const orgId = await niticore_onboard_organization({
+        company_name: lead.company_name,
+        contact_first_name: lead.contact_first_name,
+        contact_last_name: lead.contact_last_name,
+        work_email: lead.work_email,
+        company_domain: lead.company_domain,
+        region: lead.region,
+        company_size: lead.company_size,
+        interested_modules_json: lead.interested_modules_json,
+        interested_frameworks_json: lead.interested_frameworks_json,
+        plan: body.plan,
+        billing_ref: body.billing_ref,
+        contract_start_date: body.contract_start_date,
+        contract_end_date: body.contract_end_date,
+        primary_admin_name: body.primary_admin_name,
+        primary_admin_email: body.primary_admin_email,
+      })
+
+      lead.status = 'Converted_to_Tenant'
+      lead.converted_organization_id = orgId
+      lead.updated_at = new Date()
+      await lead.save({ transaction: t })
+
+      return orgId
+    })
   } catch (err) {
-    console.error('[LEAD_CONVERT] Failed to update lead after provisioning:', err)
+    console.error('[LEAD_CONVERT] Conversion transaction failed:', err)
     return NextResponse.json(
-      { error: 'server_error', message: 'Failed to finalize conversion.' },
+      { error: 'conversion_failed', message: 'Failed to convert lead to tenant.' },
       { status: 500 },
     )
   }
