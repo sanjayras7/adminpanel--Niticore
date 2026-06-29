@@ -1,15 +1,17 @@
 'use client'
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react'
-import { WizardState, WizardStep, CustomerProfileData, PlanLifecycleData } from '@/lib/wizard/types'
+import { WizardState, WizardStep, CustomerProfileData, PlanLifecycleData, AdminRequestBody, ModuleSelection, FrameworkStepData, IntegrationIntentData } from '@/lib/wizard/types'
 
 export { WizardStep }
+
+type StepData = CustomerProfileData | PlanLifecycleData | AdminRequestBody | ModuleSelection[] | FrameworkStepData | IntegrationIntentData
 
 interface WizardContextType extends WizardState {
   steps: WizardStep[]
   goNext: (serverErrors?: Record<string, string>) => Promise<void>
   goBack: () => void
-  updateStepData: (stepNumber: number, data: CustomerProfileData | PlanLifecycleData) => void
+  updateStepData: (stepNumber: number, data: StepData) => void
   setErrors: (errors: Record<string, string>) => void
   clearErrors: () => void
   resetWizard: () => void
@@ -23,7 +25,23 @@ const initialState: WizardState = {
   currentStep: 1,
   step1: undefined,
   step2: undefined,
+  step3: undefined,
+  step4: undefined,
+  step5: undefined,
+  step6: undefined,
   errors: {},
+}
+
+function getStepData(step: number, state: WizardState) {
+  switch (step) {
+    case 1: return state.step1
+    case 2: return state.step2
+    case 3: return state.step3
+    case 4: return state.step4
+    case 5: return state.step5
+    case 6: return state.step6
+    default: return undefined
+  }
 }
 
 export function WizardProvider({ children, steps }: { children: ReactNode; steps: WizardStep[] }) {
@@ -35,7 +53,7 @@ export function WizardProvider({ children, steps }: { children: ReactNode; steps
       const currentStepDef = steps.find((s) => s.stepNumber === state.currentStep)
       if (!currentStepDef) return
 
-      const stepData = state.currentStep === 1 ? state.step1 : state.step2
+      const stepData = getStepData(state.currentStep, state)
       const clientErrors = currentStepDef.validate(stepData)
 
       let finalErrors = { ...clientErrors }
@@ -70,32 +88,42 @@ export function WizardProvider({ children, steps }: { children: ReactNode; steps
 
         const nextStep = state.currentStep + 1
         if (nextStep <= steps.length) {
-          setState((prev) => ({ ...prev, currentStep: nextStep as 1 | 2, errors: {} }))
+          setState((prev) => ({ ...prev, currentStep: nextStep as 1 | 2 | 3 | 4 | 5 | 6, errors: {} }))
         }
       } finally {
         setIsValidating(false)
       }
     },
-    [state.currentStep, state.step1, state.step2, steps]
+    [state.currentStep, state.step1, state.step2, state.step3, state.step4, state.step5, state.step6, steps]
   )
 
   const goBack = useCallback(() => {
     setState((prev) => ({
       ...prev,
-      currentStep: Math.max(1, prev.currentStep - 1) as 1 | 2,
+      currentStep: Math.max(1, prev.currentStep - 1) as 1 | 2 | 3 | 4 | 5 | 6,
       errors: {},
     }))
   }, [])
 
   const updateStepData = useCallback(
-    (stepNumber: number, data: CustomerProfileData | PlanLifecycleData) => {
+    (stepNumber: number, data: StepData) => {
       setState((prev) => {
-        if (stepNumber === 1) {
-          return { ...prev, step1: data as CustomerProfileData }
-        } else if (stepNumber === 2) {
-          return { ...prev, step2: data as PlanLifecycleData }
+        switch (stepNumber) {
+          case 1:
+            return { ...prev, step1: data as CustomerProfileData }
+          case 2:
+            return { ...prev, step2: data as PlanLifecycleData }
+          case 3:
+            return { ...prev, step3: data as AdminRequestBody }
+          case 4:
+            return { ...prev, step4: data as ModuleSelection[] }
+          case 5:
+            return { ...prev, step5: data as FrameworkStepData }
+          case 6:
+            return { ...prev, step6: data as IntegrationIntentData }
+          default:
+            return prev
         }
-        return prev
       })
     },
     []

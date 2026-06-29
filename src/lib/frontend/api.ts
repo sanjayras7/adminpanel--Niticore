@@ -238,3 +238,11 @@ export async function deleteClause(frameworkId: string, versionId: string, secti
     throw body as ApiError
   }
 }
+
+export async function getWizardPrefill(leadId: string, userId?: string): Promise<import('@/lib/wizard/types').WizardPrefillResponse> {
+  const res = await fetch(`${API_BASE}/wizard/prefill?leadId=${encodeURIComponent(leadId)}`, {
+    headers: buildHeaders(userId),
+  })
+  const body = await handleResponse<{ data: import('@/lib/wizard/types').WizardPrefillResponse }>(res)
+  return body.data
+}
