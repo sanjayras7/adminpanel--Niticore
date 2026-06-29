@@ -363,3 +363,415 @@ describe('POST /api/v1/internal/gates/override', () => {
     expect(body.error).toBe('internal_error')
   })
 })
+
+describe('canScheduleDemo', () => {
+  beforeEach(() => {
+    jest.resetModules()
+  })
+
+  it('returns blocked when organization is not found', async () => {
+    jest.doMock('@/lib/sequelize', () => ({
+      sequelize: { query: jest.fn().mockResolvedValue([]) },
+    }))
+
+    const { canScheduleDemo } = await import('@/lib/gate-service')
+    const result = await canScheduleDemo('nonexistent-org')
+
+    expect(result.allowed).toBe(false)
+    expect(result.reason).toBe('Organization not found')
+    expect(result.gate_type).toBe('nda')
+  })
+
+  it('returns allowed when NDA is not required', async () => {
+    const mockQuery = jest.fn()
+    mockQuery.mockResolvedValueOnce([{ id: 'lead-1', nda_required: false }])
+    jest.doMock('@/lib/sequelize', () => ({
+      sequelize: { query: mockQuery },
+    }))
+
+    const { canScheduleDemo } = await import('@/lib/gate-service')
+    const result = await canScheduleDemo('org-1')
+
+    expect(result.allowed).toBe(true)
+    expect(result.gate_type).toBe('nda')
+    expect(result.reason).toBeUndefined()
+  })
+
+  it('returns blocked when NDA required and not signed, no override', async () => {
+    const mockQuery = jest.fn()
+    mockQuery.mockResolvedValueOnce([{ id: 'lead-1', nda_required: true }])
+    mockQuery.mockResolvedValueOnce([])
+    jest.doMock('@/lib/sequelize', () => ({
+      sequelize: { query: mockQuery },
+    }))
+
+    const { canScheduleDemo } = await import('@/lib/gate-service')
+    const result = await canScheduleDemo('org-1')
+
+    expect(result.allowed).toBe(false)
+    expect(result.reason).toBe('NDA not signed')
+    expect(result.gate_type).toBe('nda')
+  })
+
+  it('returns allowed when NDA required and signed', async () => {
+    const mockQuery = jest.fn()
+    mockQuery.mockResolvedValueOnce([{ id: 'lead-1', nda_required: true }])
+    mockQuery.mockResolvedValueOnce([{ id: 'doc-1' }])
+    jest.doMock('@/lib/sequelize', () => ({
+      sequelize: { query: mockQuery },
+    }))
+
+    const { canScheduleDemo } = await import('@/lib/gate-service')
+    const result = await canScheduleDemo('org-1')
+
+    expect(result.allowed).toBe(true)
+    expect(result.gate_type).toBe('nda')
+    expect(result.document_id).toBe('doc-1')
+  })
+
+  it('returns allowed when NDA required, not signed, with valid override', async () => {
+    const mockQuery = jest.fn()
+    mockQuery.mockResolvedValueOnce([{ id: 'lead-1', nda_required: true }])
+    mockQuery.mockResolvedValueOnce([])
+    mockQuery.mockResolvedValueOnce([{ id: 'override-1' }])
+    jest.doMock('@/lib/sequelize', () => ({
+      sequelize: { query: mockQuery },
+    }))
+
+    const { canScheduleDemo } = await import('@/lib/gate-service')
+    const result = await canScheduleDemo('org-1', 'override-1')
+
+    expect(result.allowed).toBe(true)
+    expect(result.gate_type).toBe('nda')
+  })
+
+  it('returns blocked when NDA required, not signed, with invalid override', async () => {
+    const mockQuery = jest.fn()
+    mockQuery.mockResolvedValueOnce([{ id: 'lead-1', nda_required: true }])
+    mockQuery.mockResolvedValueOnce([])
+    mockQuery.mockResolvedValueOnce([])
+    jest.doMock('@/lib/sequelize', () => ({
+      sequelize: { query: mockQuery },
+    }))
+
+    const { canScheduleDemo } = await import('@/lib/gate-service')
+    const result = await canScheduleDemo('org-1', 'invalid-override')
+
+    expect(result.allowed).toBe(false)
+    expect(result.reason).toBe('Invalid override')
+    expect(result.gate_type).toBe('nda')
+  })
+
+  it('returns allowed when NDA not required, even with invalid override', async () => {
+    const mockQuery = jest.fn()
+    mockQuery.mockResolvedValueOnce([{ id: 'lead-1', nda_required: false }])
+    jest.doMock('@/lib/sequelize', () => ({
+      sequelize: { query: mockQuery },
+    }))
+
+    const { canScheduleDemo } = await import('@/lib/gate-service')
+    const result = await canScheduleDemo('org-1', 'some-override')
+
+    expect(result.allowed).toBe(true)
+    expect(result.gate_type).toBe('nda')
+  })
+})
+
+describe('canActivateTenant', () => {
+  beforeEach(() => {
+    jest.resetModules()
+  })
+
+  it('returns allowed when contract is signed', async () => {
+    const mockQuery = jest.fn()
+    mockQuery.mockResolvedValueOnce([{ id: 'doc-1' }])
+    jest.doMock('@/lib/sequelize', () => ({
+      sequelize: { query: mockQuery },
+    }))
+
+    const { canActivateTenant } = await import('@/lib/gate-service')
+    const result = await canActivateTenant('org-1')
+
+    expect(result.allowed).toBe(true)
+    expect(result.gate_type).toBe('contract')
+    expect(result.document_id).toBe('doc-1')
+  })
+
+  it('returns blocked when contract not signed, no override', async () => {
+    const mockQuery = jest.fn()
+    mockQuery.mockResolvedValueOnce([])
+    jest.doMock('@/lib/sequelize', () => ({
+      sequelize: { query: mockQuery },
+    }))
+
+    const { canActivateTenant } = await import('@/lib/gate-service')
+    const result = await canActivateTenant('org-1')
+
+    expect(result.allowed).toBe(false)
+    expect(result.reason).toBe('Contract not signed')
+    expect(result.gate_type).toBe('contract')
+  })
+
+  it('returns allowed when contract not signed, with valid override', async () => {
+    const mockQuery = jest.fn()
+    mockQuery.mockResolvedValueOnce([])
+    mockQuery.mockResolvedValueOnce([{ id: 'override-1' }])
+    jest.doMock('@/lib/sequelize', () => ({
+      sequelize: { query: mockQuery },
+    }))
+
+    const { canActivateTenant } = await import('@/lib/gate-service')
+    const result = await canActivateTenant('org-1', 'override-1')
+
+    expect(result.allowed).toBe(true)
+    expect(result.gate_type).toBe('contract')
+  })
+
+  it('returns blocked when contract not signed, with invalid override', async () => {
+    const mockQuery = jest.fn()
+    mockQuery.mockResolvedValueOnce([])
+    mockQuery.mockResolvedValueOnce([])
+    jest.doMock('@/lib/sequelize', () => ({
+      sequelize: { query: mockQuery },
+    }))
+
+    const { canActivateTenant } = await import('@/lib/gate-service')
+    const result = await canActivateTenant('org-1', 'invalid-override')
+
+    expect(result.allowed).toBe(false)
+    expect(result.reason).toBe('Invalid override')
+    expect(result.gate_type).toBe('contract')
+  })
+})
+
+describe('POST /api/v1/internal/gates/check-demo', () => {
+  beforeEach(() => {
+    jest.resetModules()
+  })
+
+  it('returns 401 when not authenticated', async () => {
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockRejectedValue(new (class extends Error {
+        statusCode = 401
+        constructor() {
+          super('Authentication required')
+        }
+      })()),
+    }))
+
+    const { POST } = await import('@/app/api/v1/internal/gates/check-demo/route')
+    const request = new Request('http://localhost/api/v1/internal/gates/check-demo', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ organization_id: 'org-1' }),
+    }) as never
+
+    const response = await POST(request)
+    const body = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(body.error).toBe('unauthorized')
+  })
+
+  it('returns 403 when role is not permitted', async () => {
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-2', roleName: 'Customer Success' }),
+    }))
+
+    const { POST } = await import('@/app/api/v1/internal/gates/check-demo/route')
+    const request = new Request('http://localhost/api/v1/internal/gates/check-demo', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-2' },
+      body: JSON.stringify({ organization_id: 'org-1' }),
+    }) as never
+
+    const response = await POST(request)
+    const body = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(body.error).toBe('forbidden')
+  })
+
+  it('returns 400 when organization_id is missing', async () => {
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+    }))
+
+    const { POST } = await import('@/app/api/v1/internal/gates/check-demo/route')
+    const request = new Request('http://localhost/api/v1/internal/gates/check-demo', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      body: JSON.stringify({}),
+    }) as never
+
+    const response = await POST(request)
+    const body = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(body.error).toBe('validation_error')
+    expect(body.message).toBe('organization_id is required')
+  })
+
+  it('returns gate check result on success', async () => {
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Implementation Manager' }),
+    }))
+
+    jest.doMock('@/lib/gate-service', () => ({
+      canScheduleDemo: jest.fn().mockResolvedValue({ allowed: false, reason: 'NDA not signed', gate_type: 'nda' }),
+    }))
+
+    const { POST } = await import('@/app/api/v1/internal/gates/check-demo/route')
+    const request = new Request('http://localhost/api/v1/internal/gates/check-demo', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      body: JSON.stringify({ organization_id: 'org-1' }),
+    }) as never
+
+    const response = await POST(request)
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.data.allowed).toBe(false)
+    expect(body.data.reason).toBe('NDA not signed')
+  })
+
+  it('returns 500 on internal error', async () => {
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+    }))
+
+    jest.doMock('@/lib/gate-service', () => ({
+      canScheduleDemo: jest.fn().mockRejectedValue(new Error('DB error')),
+    }))
+
+    const { POST } = await import('@/app/api/v1/internal/gates/check-demo/route')
+    const request = new Request('http://localhost/api/v1/internal/gates/check-demo', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      body: JSON.stringify({ organization_id: 'org-1' }),
+    }) as never
+
+    const response = await POST(request)
+    const body = await response.json()
+
+    expect(response.status).toBe(500)
+    expect(body.error).toBe('internal_error')
+  })
+})
+
+describe('POST /api/v1/internal/gates/check-activation', () => {
+  beforeEach(() => {
+    jest.resetModules()
+  })
+
+  it('returns 401 when not authenticated', async () => {
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockRejectedValue(new (class extends Error {
+        statusCode = 401
+        constructor() {
+          super('Authentication required')
+        }
+      })()),
+    }))
+
+    const { POST } = await import('@/app/api/v1/internal/gates/check-activation/route')
+    const request = new Request('http://localhost/api/v1/internal/gates/check-activation', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ organization_id: 'org-1' }),
+    }) as never
+
+    const response = await POST(request)
+    const body = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(body.error).toBe('unauthorized')
+  })
+
+  it('returns 403 when role is not permitted', async () => {
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-2', roleName: 'Customer Success' }),
+    }))
+
+    const { POST } = await import('@/app/api/v1/internal/gates/check-activation/route')
+    const request = new Request('http://localhost/api/v1/internal/gates/check-activation', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-2' },
+      body: JSON.stringify({ organization_id: 'org-1' }),
+    }) as never
+
+    const response = await POST(request)
+    const body = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(body.error).toBe('forbidden')
+  })
+
+  it('returns 400 when organization_id is missing', async () => {
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+    }))
+
+    const { POST } = await import('@/app/api/v1/internal/gates/check-activation/route')
+    const request = new Request('http://localhost/api/v1/internal/gates/check-activation', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      body: JSON.stringify({}),
+    }) as never
+
+    const response = await POST(request)
+    const body = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(body.error).toBe('validation_error')
+    expect(body.message).toBe('organization_id is required')
+  })
+
+  it('returns gate check result on success', async () => {
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Implementation Manager' }),
+    }))
+
+    jest.doMock('@/lib/gate-service', () => ({
+      canActivateTenant: jest.fn().mockResolvedValue({ allowed: true, gate_type: 'contract', document_id: 'doc-1' }),
+    }))
+
+    const { POST } = await import('@/app/api/v1/internal/gates/check-activation/route')
+    const request = new Request('http://localhost/api/v1/internal/gates/check-activation', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      body: JSON.stringify({ organization_id: 'org-1' }),
+    }) as never
+
+    const response = await POST(request)
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.data.allowed).toBe(true)
+    expect(body.data.document_id).toBe('doc-1')
+  })
+
+  it('returns 500 on internal error', async () => {
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+    }))
+
+    jest.doMock('@/lib/gate-service', () => ({
+      canActivateTenant: jest.fn().mockRejectedValue(new Error('DB error')),
+    }))
+
+    const { POST } = await import('@/app/api/v1/internal/gates/check-activation/route')
+    const request = new Request('http://localhost/api/v1/internal/gates/check-activation', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      body: JSON.stringify({ organization_id: 'org-1' }),
+    }) as never
+
+    const response = await POST(request)
+    const body = await response.json()
+
+    expect(response.status).toBe(500)
+    expect(body.error).toBe('internal_error')
+  })
+})
