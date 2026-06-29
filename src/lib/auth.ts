@@ -96,3 +96,9 @@ export async function authenticateRequest(request: NextRequest): Promise<AuthUse
     return null
   }
 }
+
+export function requireSuperAdmin(authUser: AuthUser): void {
+  if (authUser.roleName !== 'Super Admin') {
+    throw new AuthError('Only Super Admin can override gates', 403)
+  }
+}
