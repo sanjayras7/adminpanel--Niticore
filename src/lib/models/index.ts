@@ -25,6 +25,7 @@ import { ControlVersion } from './ControlVersion'
 import { ControlImplementationStep } from './ControlImplementationStep'
 import { ControlStepCategory } from './ControlStepCategory'
 import { ControlEvidenceType } from './ControlEvidenceType'
+import { GateOverride } from './GateOverride'
 
 InternalRole.hasMany(InternalUser, { foreignKey: 'internal_role_id', as: 'users' })
 
@@ -74,6 +75,7 @@ export {
   FrameworkVersion,
   FrameworkSection,
   FrameworkClause,
+  GateOverride,
 }
 
 export function initModels(): void {
@@ -101,10 +103,10 @@ export function initModels(): void {
   ControlImplementationStep
   ControlStepCategory
   ControlEvidenceType
-}
   Framework
   FrameworkClassification
   FrameworkVersion
   FrameworkSection
   FrameworkClause
+  GateOverride
 }
