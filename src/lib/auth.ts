@@ -51,3 +51,21 @@ export function requireMutationAuth(authUser: AuthUser): void {
     throw new AuthError('Read-only Auditor cannot perform mutations', 403)
   }
 }
+
+const PERMISSION_ROLES: Record<string, string[]> = {
+  'tenant:change_status': ['Super Admin', 'Implementation Manager'],
+}
+
+export function requirePermission(action: string, authUser: AuthUser): void {
+  const allowedRoles = PERMISSION_ROLES[action]
+  if (!allowedRoles) {
+    throw new AuthError(`Unknown permission action: ${action}`, 403)
+  }
+  if (!authUser.roleName || !allowedRoles.includes(authUser.roleName)) {
+    throw new AuthError('Your role does not have permission to change tenant status.', 403)
+  }
+}
+
+export function canChangeTerminalStatus(authUser: AuthUser): boolean {
+  return authUser.roleName === 'Super Admin'
+}

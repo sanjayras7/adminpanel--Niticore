@@ -6,6 +6,7 @@ import { FrameworkClassification } from './FrameworkClassification'
 import { FrameworkVersion } from './FrameworkVersion'
 import { FrameworkSection } from './FrameworkSection'
 import { FrameworkClause } from './FrameworkClause'
+import { Organization } from './Organization'
 
 InternalUser.belongsTo(InternalRole, { foreignKey: 'internal_role_id', as: 'role' })
 InternalRole.hasMany(InternalUser, { foreignKey: 'internal_role_id', as: 'users' })
@@ -31,6 +32,7 @@ export {
   FrameworkVersion,
   FrameworkSection,
   FrameworkClause,
+  Organization,
 }
 
 export function initModels(): void {
@@ -42,4 +44,5 @@ export function initModels(): void {
   FrameworkVersion
   FrameworkSection
   FrameworkClause
+  Organization
 }
