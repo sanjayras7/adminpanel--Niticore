@@ -15,10 +15,38 @@ export interface PlanLifecycleData {
   initialStatus: string
 }
 
+export interface FrameworkSelection {
+  framework_id?: string | null
+  framework_version_id?: string | null
+  framework_name?: string
+  framework_version_name?: string
+  control_ids?: string[] | null
+  risk_threshold: string
+}
+
+export interface FrameworkStepData {
+  organization_id: string
+  framework_selections: FrameworkSelection[]
+  created_by?: string
+}
+
+export interface IntegrationIntentData {
+  organization_id: string
+  domain?: string | null
+  sso_required?: boolean
+  sso_provider?: string | null
+  notes?: string | null
+  created_by?: string
+}
+
 export interface WizardState {
-  currentStep: 1 | 2
+  currentStep: 1 | 2 | 3 | 4 | 5 | 6
   step1?: CustomerProfileData
   step2?: PlanLifecycleData
+  step3?: any
+  step4?: any
+  step5?: FrameworkStepData
+  step6?: IntegrationIntentData
   errors: Record<string, string>
 }
 
