@@ -1,13 +1,16 @@
-﻿import { ESignAdapter } from './ESignAdapter'
+import { ESignAdapter } from './ESignAdapter'
 import { DropboxSignAdapter } from './DropboxSignAdapter'
+import { MockESignProvider } from './MockESignProvider'
 import type { ProviderName } from './types'
 
 export { ESignAdapter } from './ESignAdapter'
 export { DropboxSignAdapter } from './DropboxSignAdapter'
+export { MockESignProvider } from './MockESignProvider'
 export * from './types'
 
 const adapterRegistry: Record<ProviderName, new (apiKey?: string) => ESignAdapter> = {
   dropbox_sign: DropboxSignAdapter,
+  mock: MockESignProvider,
 }
 
 export function createESignAdapter(providerName: ProviderName, apiKey?: string): ESignAdapter {

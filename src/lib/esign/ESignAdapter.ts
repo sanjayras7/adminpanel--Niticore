@@ -1,10 +1,13 @@
-﻿import {
+import {
   CreateSigningRequestParams,
   CreateSigningRequestResult,
   SendSigningRequestResult,
   GetSigningRequestStatusResult,
+  VoidSigningRequestResult,
+  SignedDocument,
   PlatformSigningStatus,
   LegalDocumentUpdateFields,
+  WebhookEvent,
   ESignProviderError,
   validateSignerEmail,
 } from './types'
@@ -16,12 +19,18 @@ export abstract class ESignAdapter {
   abstract createSigningRequest(params: CreateSigningRequestParams): Promise<CreateSigningRequestResult>
   abstract sendSigningRequest(envelopeId: string): Promise<SendSigningRequestResult>
   abstract getSigningRequestStatus(envelopeId: string): Promise<GetSigningRequestStatusResult>
+  abstract voidSigningRequest(envelopeId: string, reason?: string): Promise<VoidSigningRequestResult>
+  abstract downloadSignedDocument(envelopeId: string): Promise<SignedDocument>
+
+  abstract verifyWebhookSignature(payload: Buffer, signatureHeader: string): boolean
+  abstract parseWebhookEvent(payload: Buffer): WebhookEvent
 
   abstract mapProviderStatusToPlatform(providerStatus: string): PlatformSigningStatus
   abstract buildCreatePayload(params: CreateSigningRequestParams): Record<string, unknown>
   abstract parseCreateResponse(response: unknown): CreateSigningRequestResult
   abstract parseSendResponse(response: unknown): SendSigningRequestResult
   abstract parseStatusResponse(response: unknown): GetSigningRequestStatusResult
+  abstract parseVoidResponse(response: unknown, envelopeId: string): VoidSigningRequestResult
 
   protected validateCreateParams(params: CreateSigningRequestParams): void {
     if (!params.signers || params.signers.length === 0) {
@@ -80,5 +89,5 @@ export abstract class ESignAdapter {
     console.debug(`[ESignAudit] ${action}`, details)
   }
 
-  abstract buildLegalDocumentUpdate(result: CreateSigningRequestResult | SendSigningRequestResult | GetSigningRequestStatusResult): LegalDocumentUpdateFields
+  abstract buildLegalDocumentUpdate(result: CreateSigningRequestResult | SendSigningRequestResult | GetSigningRequestStatusResult | VoidSigningRequestResult): LegalDocumentUpdateFields
 }

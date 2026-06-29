@@ -4,8 +4,8 @@ import { sequelize } from '@/lib/sequelize'
 export interface LegalDocumentAttributes {
   id: string
   document_type: string
-  organization_id: string | null
   lead_id: string | null
+  organization_id: string | null
   provider_name: string | null
   provider_envelope_id: string | null
   provider_status: string | null
@@ -53,8 +53,8 @@ export function isValidStatus(s: string): s is ContractPlatformStatus {
 export class LegalDocument extends Model<LegalDocumentAttributes> implements LegalDocumentAttributes {
   declare id: string
   declare document_type: string
-  declare organization_id: string | null
   declare lead_id: string | null
+  declare organization_id: string | null
   declare provider_name: string | null
   declare provider_envelope_id: string | null
   declare provider_status: string | null
@@ -85,8 +85,8 @@ LegalDocument.init(
       primaryKey: true,
     },
     document_type: { type: DataTypes.STRING(50), allowNull: false },
-    organization_id: { type: DataTypes.UUID, allowNull: true },
     lead_id: { type: DataTypes.UUID, allowNull: true },
+    organization_id: { type: DataTypes.UUID, allowNull: true },
     provider_name: { type: DataTypes.STRING(50), allowNull: true },
     provider_envelope_id: { type: DataTypes.STRING(255), allowNull: true },
     provider_status: { type: DataTypes.STRING(50), allowNull: true },

@@ -12,25 +12,25 @@ async function up() {
       CREATE TABLE IF NOT EXISTS legal_documents (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         document_type VARCHAR(50) NOT NULL,
-        organization_id UUID NOT NULL,
         lead_id UUID,
-        provider_name VARCHAR(100),
-        provider_envelope_id VARCHAR(255) NOT NULL,
-        provider_status VARCHAR(100),
+        organization_id UUID,
+        provider_name VARCHAR(50),
+        provider_envelope_id VARCHAR(255),
+        provider_status VARCHAR(50),
         platform_status VARCHAR(50),
-        signer_names_json TEXT NOT NULL,
-        signer_emails_json TEXT NOT NULL,
+        signer_names_json TEXT,
+        signer_emails_json TEXT,
         sent_at TIMESTAMPTZ,
         viewed_at TIMESTAMPTZ,
         signed_at TIMESTAMPTZ,
         declined_at TIMESTAMPTZ,
         expired_at TIMESTAMPTZ,
         voided_at TIMESTAMPTZ,
-        storage_key VARCHAR(500),
+        storage_key VARCHAR(255),
         file_name VARCHAR(255),
         file_type VARCHAR(100),
-        file_size_bytes INTEGER,
-        created_by UUID NOT NULL,
+        file_size_bytes BIGINT,
+        created_by UUID,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         deleted_at TIMESTAMPTZ
@@ -38,29 +38,18 @@ async function up() {
     `)
 
     await sequelize.query(`
-      CREATE INDEX IF NOT EXISTS idx_legal_documents_org_type_status
-        ON legal_documents(organization_id, document_type, platform_status)
-        WHERE deleted_at IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_legal_documents_lead_id ON legal_documents(lead_id);
     `)
 
     await sequelize.query(`
-      CREATE INDEX IF NOT EXISTS idx_legal_documents_provider_envelope
-        ON legal_documents(provider_envelope_id)
-        WHERE deleted_at IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_legal_documents_organization_id ON legal_documents(organization_id);
     `)
 
     await sequelize.query(`
-      CREATE TABLE IF NOT EXISTS webhook_dead_letter (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        provider_envelope_id VARCHAR(255) NOT NULL,
-        event_type VARCHAR(50) NOT NULL,
-        reason VARCHAR(255) NOT NULL,
-        raw_payload JSONB,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
+      CREATE INDEX IF NOT EXISTS idx_legal_documents_lead_type ON legal_documents(lead_id, document_type);
     `)
 
-    console.log('Migration 002: created legal_documents and webhook_dead_letter tables')
+    console.log('Migration 006: created legal_documents table successfully')
   } finally {
     await sequelize.close()
   }
@@ -71,9 +60,8 @@ async function down() {
   const sequelize = new Sequelize(url, { dialect: 'postgres', logging: console.log })
 
   try {
-    await sequelize.query(`DROP TABLE IF EXISTS webhook_dead_letter;`)
-    await sequelize.query(`DROP TABLE IF EXISTS legal_documents;`)
-    console.log('Migration 002: dropped legal_documents and webhook_dead_letter tables')
+    await sequelize.query(`DROP TABLE IF EXISTS legal_documents CASCADE`)
+    console.log('Migration 006: dropped legal_documents table')
   } finally {
     await sequelize.close()
   }
@@ -85,7 +73,7 @@ if (command === 'up') {
 } else if (command === 'down') {
   down().catch((err) => { console.error(err); process.exit(1) })
 } else {
-  console.log('Usage: node 002-legal-documents.js <up|down>')
+  console.log('Usage: node 006-create-legal-documents.js <up|down>')
 }
 
 module.exports = { up, down }
