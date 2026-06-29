@@ -7,6 +7,7 @@ export interface InternalUserAttributes {
   name: string
   surname: string
   email: string
+  job_title: string | null
   internal_role_id: string | null
   status: 'active' | 'inactive' | 'locked'
   totp_enabled: boolean
@@ -29,6 +30,7 @@ export class InternalUser extends Model<InternalUserAttributes> implements Inter
   declare name: string
   declare surname: string
   declare email: string
+  declare job_title: string | null
   declare internal_role_id: string | null
   declare status: 'active' | 'inactive' | 'locked'
   declare totp_enabled: boolean
@@ -58,6 +60,7 @@ InternalUser.init(
     name: { type: DataTypes.STRING(255), allowNull: false },
     surname: { type: DataTypes.STRING(255), allowNull: false },
     email: { type: DataTypes.STRING(320), allowNull: false, unique: true },
+    job_title: { type: DataTypes.STRING(255), allowNull: true },
     internal_role_id: { type: DataTypes.UUID, allowNull: true },
     status: {
       type: DataTypes.ENUM('active', 'inactive', 'locked'),
