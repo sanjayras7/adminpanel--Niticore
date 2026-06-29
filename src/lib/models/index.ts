@@ -6,8 +6,23 @@ import { InternalSession } from './InternalSession'
 import { Lead } from './Lead'
 import { LeadNote } from './LeadNote'
 import { LegalDocument } from './LegalDocument'
+import { OrganizationAdminInvite } from './OrganizationAdminInvite'
+import { Module } from './Module'
+import { OrganizationModuleConfig } from './OrganizationModuleConfig'
 
-export { InternalUser, InternalRole, MagicLink, InternalAuditEvent, InternalSession, Lead, LeadNote, LegalDocument }
+export {
+  InternalUser,
+  InternalRole,
+  MagicLink,
+  InternalAuditEvent,
+  InternalSession,
+  Lead,
+  LeadNote,
+  LegalDocument,
+  OrganizationAdminInvite,
+  Module,
+  OrganizationModuleConfig,
+}
 
 export function initModels(): void {
   InternalUser
@@ -18,4 +33,7 @@ export function initModels(): void {
   Lead
   LeadNote
   LegalDocument
+  OrganizationAdminInvite
+  Module
+  OrganizationModuleConfig
 }
