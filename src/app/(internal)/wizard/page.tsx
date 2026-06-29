@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { WizardProvider, useWizard, WizardStep } from '@/lib/wizard/WizardContext'
 import { WizardShell } from '@/lib/wizard/WizardShell'
@@ -9,7 +9,6 @@ import { PlanLifecycleStep } from '@/lib/wizard/steps/PlanLifecycleStep'
 import { validateCustomerProfile, validatePlanLifecycle } from '@/lib/validation/wizard'
 import { getWizardPrefill } from '@/lib/frontend/api'
 import { CustomerProfileData, PlanLifecycleData, ReferenceData } from '@/lib/wizard/types'
-import type { AdminRequestBody, ModuleSelection, FrameworkStepData, IntegrationIntentData } from '@/lib/wizard/types'
 
 const REFERENCE_DATA_API = '/api/v1/internal/wizard/reference-data'
 const VALIDATE_STEP_API = '/api/v1/internal/wizard/validate-step'
@@ -71,12 +70,12 @@ function useLeadPrefill(leadId: string | null) {
       .then((response) => {
         if (cancelled) return
 
-        if (response.step1) updateStepData(1, response.step1 as Partial<CustomerProfileData>)
-        if (response.step2) updateStepData(2, response.step2 as Partial<PlanLifecycleData>)
-        if (response.step3) updateStepData(3, response.step3 as Partial<AdminRequestBody>)
-        if (response.step4) updateStepData(4, response.step4 as ModuleSelection[])
-        if (response.step5) updateStepData(5, response.step5 as Partial<FrameworkStepData>)
-        if (response.step6) updateStepData(6, response.step6 as Partial<IntegrationIntentData>)
+        if (response.step1) updateStepData(1, response.step1)
+        if (response.step2) updateStepData(2, response.step2)
+        if (response.step3) updateStepData(3, response.step3)
+        if (response.step4) updateStepData(4, response.step4)
+        if (response.step5) updateStepData(5, response.step5)
+        if (response.step6) updateStepData(6, response.step6)
 
         setPrefillLoading(false)
       })
