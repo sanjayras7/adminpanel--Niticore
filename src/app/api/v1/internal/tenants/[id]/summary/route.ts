@@ -41,7 +41,7 @@ export async function GET(
     }
 
     const moduleConfigs = await OrganizationModuleConfig.findAll({
-      where: { organization_id: id, is_enabled: true },
+      where: { organization_id: id, enabled: true },
       include: [{ model: Module, as: 'module' }],
     })
 

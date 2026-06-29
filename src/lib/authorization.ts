@@ -1,4 +1,4 @@
-﻿import { permissionMatrix, type InternalRoleName, type ModuleName, type ActionName } from './permission-matrix'
+import { permissionMatrix, type InternalRoleName, type ModuleName, type ActionName } from './permission-matrix'
 
 export function can(role: InternalRoleName, module: ModuleName, action: ActionName): boolean {
   const moduleEntry = permissionMatrix[module]

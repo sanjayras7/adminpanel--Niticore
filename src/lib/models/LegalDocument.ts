@@ -3,15 +3,15 @@ import { sequelize } from '@/lib/sequelize'
 
 export interface LegalDocumentAttributes {
   id: string
-  document_type: 'nda' | 'contract'
+  document_type: string
   lead_id: string | null
   organization_id: string | null
   provider_name: string | null
   provider_envelope_id: string | null
-  provider_status: 'draft' | 'sent' | 'viewed' | 'signed' | 'declined' | 'expired' | 'voided'
-  platform_status: 'pending' | 'completed' | 'failed'
-  signer_names_json: string[] | null
-  signer_emails_json: string[] | null
+  provider_status: string | null
+  platform_status: string | null
+  signer_names_json: string | null
+  signer_emails_json: string | null
   sent_at: Date | null
   viewed_at: Date | null
   signed_at: Date | null
@@ -28,17 +28,39 @@ export interface LegalDocumentAttributes {
   deleted_at: Date | null
 }
 
+export type ContractPlatformStatus = 'Draft' | 'Sent' | 'Viewed' | 'Signed' | 'Declined' | 'Expired' | 'Voided'
+
+const VALID_STATUSES: ContractPlatformStatus[] = ['Draft', 'Sent', 'Viewed', 'Signed', 'Declined', 'Expired', 'Voided']
+
+const STATUS_FLOW: Record<ContractPlatformStatus, ContractPlatformStatus[]> = {
+  Draft: ['Sent', 'Declined', 'Expired', 'Voided'],
+  Sent: ['Viewed', 'Declined', 'Expired', 'Voided'],
+  Viewed: ['Signed', 'Declined', 'Expired', 'Voided'],
+  Signed: [],
+  Declined: [],
+  Expired: [],
+  Voided: [],
+}
+
+export function isValidTransition(from: ContractPlatformStatus, to: ContractPlatformStatus): boolean {
+  return STATUS_FLOW[from]?.includes(to) ?? false
+}
+
+export function isValidStatus(s: string): s is ContractPlatformStatus {
+  return (VALID_STATUSES as string[]).includes(s)
+}
+
 export class LegalDocument extends Model<LegalDocumentAttributes> implements LegalDocumentAttributes {
   declare id: string
-  declare document_type: 'nda' | 'contract'
+  declare document_type: string
   declare lead_id: string | null
   declare organization_id: string | null
   declare provider_name: string | null
   declare provider_envelope_id: string | null
-  declare provider_status: 'draft' | 'sent' | 'viewed' | 'signed' | 'declined' | 'expired' | 'voided'
-  declare platform_status: 'pending' | 'completed' | 'failed'
-  declare signer_names_json: string[] | null
-  declare signer_emails_json: string[] | null
+  declare provider_status: string | null
+  declare platform_status: string | null
+  declare signer_names_json: string | null
+  declare signer_emails_json: string | null
   declare sent_at: Date | null
   declare viewed_at: Date | null
   declare signed_at: Date | null
@@ -62,33 +84,22 @@ LegalDocument.init(
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
-    document_type: {
-      type: DataTypes.ENUM('nda', 'contract'),
-      allowNull: false,
-    },
+    document_type: { type: DataTypes.STRING(50), allowNull: false },
     lead_id: { type: DataTypes.UUID, allowNull: true },
     organization_id: { type: DataTypes.UUID, allowNull: true },
-    provider_name: { type: DataTypes.STRING(255), allowNull: true },
+    provider_name: { type: DataTypes.STRING(50), allowNull: true },
     provider_envelope_id: { type: DataTypes.STRING(255), allowNull: true },
-    provider_status: {
-      type: DataTypes.ENUM('draft', 'sent', 'viewed', 'signed', 'declined', 'expired', 'voided'),
-      allowNull: false,
-      defaultValue: 'draft',
-    },
-    platform_status: {
-      type: DataTypes.ENUM('pending', 'completed', 'failed'),
-      allowNull: false,
-      defaultValue: 'pending',
-    },
-    signer_names_json: { type: DataTypes.JSONB, allowNull: true },
-    signer_emails_json: { type: DataTypes.JSONB, allowNull: true },
+    provider_status: { type: DataTypes.STRING(50), allowNull: true },
+    platform_status: { type: DataTypes.STRING(50), allowNull: true },
+    signer_names_json: { type: DataTypes.TEXT, allowNull: true },
+    signer_emails_json: { type: DataTypes.TEXT, allowNull: true },
     sent_at: { type: DataTypes.DATE, allowNull: true },
     viewed_at: { type: DataTypes.DATE, allowNull: true },
     signed_at: { type: DataTypes.DATE, allowNull: true },
     declined_at: { type: DataTypes.DATE, allowNull: true },
     expired_at: { type: DataTypes.DATE, allowNull: true },
     voided_at: { type: DataTypes.DATE, allowNull: true },
-    storage_key: { type: DataTypes.TEXT, allowNull: true },
+    storage_key: { type: DataTypes.STRING(255), allowNull: true },
     file_name: { type: DataTypes.STRING(255), allowNull: true },
     file_type: { type: DataTypes.STRING(100), allowNull: true },
     file_size_bytes: { type: DataTypes.BIGINT, allowNull: true },

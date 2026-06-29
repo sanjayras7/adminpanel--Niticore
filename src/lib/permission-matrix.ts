@@ -1,4 +1,4 @@
-﻿export type InternalRoleName =
+export type InternalRoleName =
   | 'Super Admin'
   | 'Implementation Manager'
   | 'Customer Success'
