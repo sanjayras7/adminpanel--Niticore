@@ -1,15 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Organization, OrganizationModuleConfig, Module, LegalDocument } from '@/lib/models'
 import { getAuthUser } from '@/lib/auth'
+import { can } from '@/lib/authorization'
+import type { InternalRoleName } from '@/lib/permission-matrix'
+
+function formatLegalDoc(doc: LegalDocument | null) {
+  if (!doc) return null
+  return {
+    id: doc.id,
+    documentType: doc.document_type,
+    providerStatus: doc.provider_status,
+    platformStatus: doc.platform_status,
+    signedAt: doc.signed_at?.toISOString() ?? null,
+    expiredAt: doc.expired_at?.toISOString() ?? null,
+    storageKey: doc.storage_key,
+  }
+}
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
+  let authUser
   try {
-    await getAuthUser(request)
+    authUser = await getAuthUser(request)
   } catch {
     return NextResponse.json({ error: 'unauthorized', message: 'Authentication required' }, { status: 401 })
+  }
+
+  if (!authUser.roleName || !can(authUser.roleName as InternalRoleName, 'tenant-ops', 'read')) {
+    return NextResponse.json({ error: 'forbidden', message: 'Insufficient permissions to view tenant summary' }, { status: 403 })
   }
 
   const { id } = params
@@ -45,19 +65,6 @@ export async function GET(
       }
       if (doc.document_type === 'contract' && !contract) {
         contract = doc
-      }
-    }
-
-    function formatLegalDoc(doc: LegalDocument | null) {
-      if (!doc) return null
-      return {
-        id: doc.id,
-        documentType: doc.document_type,
-        providerStatus: doc.provider_status,
-        platformStatus: doc.platform_status,
-        signedAt: doc.signed_at?.toISOString() ?? null,
-        expiredAt: doc.expired_at?.toISOString() ?? null,
-        storageKey: doc.storage_key,
       }
     }
 

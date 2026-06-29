@@ -1,4 +1,9 @@
 jest.mock('@/lib/auth')
+jest.mock('@/lib/authorization', () => ({
+  can: jest.fn().mockReturnValue(true),
+}))
+
+import { can } from '@/lib/authorization'
 
 const mockDate = new Date('2026-06-01T00:00:00Z')
 
@@ -85,6 +90,10 @@ function createMockDoc(overrides: Record<string, unknown> = {}) {
 describe('GET /api/v1/internal/tenants/[id]/summary', () => {
   beforeEach(() => {
     jest.resetModules()
+    jest.isolateModules(() => {
+      const { can: canFn } = require('@/lib/authorization')
+      canFn.mockReturnValue(true)
+    })
   })
 
   it('returns 401 when not authenticated', async () => {
@@ -97,6 +106,10 @@ describe('GET /api/v1/internal/tenants/[id]/summary', () => {
       })()),
     }))
 
+    jest.doMock('@/lib/authorization', () => ({
+      can: jest.fn().mockReturnValue(true),
+    }))
+
     const { GET } = await import('@/app/api/v1/internal/tenants/[id]/summary/route')
     const request = new Request('http://localhost/api/v1/internal/tenants/org-1/summary') as never
     const response = await GET(request, { params: { id: 'org-1' } })
@@ -106,9 +119,32 @@ describe('GET /api/v1/internal/tenants/[id]/summary', () => {
     expect(body.error).toBe('unauthorized')
   })
 
+  it('returns 403 when role lacks tenant-ops read permission', async () => {
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Finance/Admin' }),
+    }))
+
+    jest.doMock('@/lib/authorization', () => ({
+      can: jest.fn().mockReturnValue(false),
+    }))
+
+    const { GET } = await import('@/app/api/v1/internal/tenants/[id]/summary/route')
+    const request = new Request('http://localhost/api/v1/internal/tenants/org-1/summary') as never
+    const response = await GET(request, { params: { id: 'org-1' } })
+    const body = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(body.error).toBe('forbidden')
+  })
+
   it('returns 404 when tenant not found', async () => {
-    const { getAuthUser } = await import('@/lib/auth')
-    ;(getAuthUser as jest.Mock).mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' })
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+    }))
+
+    jest.doMock('@/lib/authorization', () => ({
+      can: jest.fn().mockReturnValue(true),
+    }))
 
     jest.doMock('@/lib/models', () => ({
       Organization: {
@@ -128,9 +164,41 @@ describe('GET /api/v1/internal/tenants/[id]/summary', () => {
     expect(body.error).toBe('not_found')
   })
 
+  it('returns 500 on database error', async () => {
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+    }))
+
+    jest.doMock('@/lib/authorization', () => ({
+      can: jest.fn().mockReturnValue(true),
+    }))
+
+    jest.doMock('@/lib/models', () => ({
+      Organization: {
+        findByPk: jest.fn().mockRejectedValue(new Error('Database connection failed')),
+      },
+      OrganizationModuleConfig: { findAll: jest.fn() },
+      Module: {},
+      LegalDocument: { findAll: jest.fn() },
+    }))
+
+    const { GET } = await import('@/app/api/v1/internal/tenants/[id]/summary/route')
+    const request = new Request('http://localhost/api/v1/internal/tenants/org-1/summary') as never
+    const response = await GET(request, { params: { id: 'org-1' } })
+    const body = await response.json()
+
+    expect(response.status).toBe(500)
+    expect(body.error).toBe('internal_error')
+  })
+
   it('returns full summary for a populated tenant', async () => {
-    const { getAuthUser } = await import('@/lib/auth')
-    ;(getAuthUser as jest.Mock).mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' })
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+    }))
+
+    jest.doMock('@/lib/authorization', () => ({
+      can: jest.fn().mockReturnValue(true),
+    }))
 
     const mockNda = createMockDoc({
       id: 'doc-nda',
@@ -198,8 +266,13 @@ describe('GET /api/v1/internal/tenants/[id]/summary', () => {
   })
 
   it('handles tenant with no legal documents', async () => {
-    const { getAuthUser } = await import('@/lib/auth')
-    ;(getAuthUser as jest.Mock).mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' })
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+    }))
+
+    jest.doMock('@/lib/authorization', () => ({
+      can: jest.fn().mockReturnValue(true),
+    }))
 
     jest.doMock('@/lib/models', () => ({
       Organization: {
@@ -227,8 +300,13 @@ describe('GET /api/v1/internal/tenants/[id]/summary', () => {
   })
 
   it('handles tenant with unconfigured plan', async () => {
-    const { getAuthUser } = await import('@/lib/auth')
-    ;(getAuthUser as jest.Mock).mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' })
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+    }))
+
+    jest.doMock('@/lib/authorization', () => ({
+      can: jest.fn().mockReturnValue(true),
+    }))
 
     jest.doMock('@/lib/models', () => ({
       Organization: {
@@ -256,8 +334,13 @@ describe('GET /api/v1/internal/tenants/[id]/summary', () => {
   })
 
   it('handles tenant with only NDA and no contract', async () => {
-    const { getAuthUser } = await import('@/lib/auth')
-    ;(getAuthUser as jest.Mock).mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' })
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+    }))
+
+    jest.doMock('@/lib/authorization', () => ({
+      can: jest.fn().mockReturnValue(true),
+    }))
 
     const mockNda = createMockDoc({
       id: 'doc-nda',
