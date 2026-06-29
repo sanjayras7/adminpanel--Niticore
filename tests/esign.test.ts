@@ -732,3 +732,590 @@ describe('ESignAdapter - validateCreateParams (via concrete subclass)', () => {
     expect(() => adapter.buildCreatePayload(params)).not.toThrow()
   })
 })
+
+describe('Error types', () => {
+  it('AdapterError has correct name and code', () => {
+    const err = new (require('@/lib/esign/types').AdapterError)('test', 'TEST_CODE')
+    expect(err.name).toBe('AdapterError')
+    expect(err.code).toBe('TEST_CODE')
+    expect(err.retryable).toBe(false)
+  })
+
+  it('EnvelopeNotFoundError has correct code', () => {
+    const { EnvelopeNotFoundError: Err } = require('@/lib/esign/types')
+    const err = new Err('custom message')
+    expect(err.name).toBe('EnvelopeNotFoundError')
+    expect(err.code).toBe('ENVELOPE_NOT_FOUND')
+    expect(err.message).toBe('custom message')
+  })
+
+  it('EnvelopeAlreadyCompletedError has correct code', () => {
+    const { EnvelopeAlreadyCompletedError: Err } = require('@/lib/esign/types')
+    const err = new Err()
+    expect(err.name).toBe('EnvelopeAlreadyCompletedError')
+    expect(err.code).toBe('ENVELOPE_ALREADY_COMPLETED')
+  })
+
+  it('DocumentNotReadyError has correct code', () => {
+    const { DocumentNotReadyError: Err } = require('@/lib/esign/types')
+    const err = new Err()
+    expect(err.name).toBe('DocumentNotReadyError')
+    expect(err.code).toBe('DOCUMENT_NOT_READY')
+  })
+
+  it('DocumentNotAvailableError has correct code', () => {
+    const { DocumentNotAvailableError: Err } = require('@/lib/esign/types')
+    const err = new Err()
+    expect(err.name).toBe('DocumentNotAvailableError')
+    expect(err.code).toBe('DOCUMENT_NOT_AVAILABLE')
+  })
+})
+
+describe('MockESignProvider', () => {
+  let adapter: import('@/lib/esign/types').ESignAdapter
+  const MockProvider = require('@/lib/esign/MockESignProvider').MockESignProvider
+  const { EnvelopeNotFoundError: EnfNF, EnvelopeAlreadyCompletedError: EnfComp, DocumentNotReadyError: DocNR, DocumentNotAvailableError: DocNA } = require('@/lib/esign/types')
+
+  beforeEach(() => {
+    adapter = new MockProvider()
+  })
+
+  describe('createSigningRequest', () => {
+    it('creates and returns a signing request', async () => {
+      const result = await adapter.createSigningRequest({
+        title: 'Test Agreement',
+        signers: [{ name: 'Alice', email: 'alice@example.com' }],
+        fileUrls: ['https://example.com/doc.pdf'],
+      })
+
+      expect(result.envelopeId).toMatch(/^mock_/)
+      expect(result.providerName).toBe('mock')
+      expect(result.status).toBe('sent')
+      expect(result.signUrl).toContain(result.envelopeId)
+    })
+
+    it('rejects empty signers', async () => {
+      await expect(
+        adapter.createSigningRequest({ title: 'Test', signers: [] }),
+      ).rejects.toThrow('At least one signer is required')
+    })
+
+    it('rejects invalid email', async () => {
+      await expect(
+        adapter.createSigningRequest({
+          title: 'Test',
+          signers: [{ name: 'John', email: 'bad-email' }],
+        }),
+      ).rejects.toThrow('Invalid signer email')
+    })
+  })
+
+  describe('sendSigningRequest', () => {
+    it('sends an existing envelope', async () => {
+      const created = await adapter.createSigningRequest({
+        title: 'Test',
+        signers: [{ name: 'Alice', email: 'alice@example.com' }],
+      })
+
+      const result = await adapter.sendSigningRequest(created.envelopeId)
+      expect(result.status).toBe('sent')
+      expect(result.envelopeId).toBe(created.envelopeId)
+    })
+
+    it('throws EnvelopeNotFoundError for unknown envelope', async () => {
+      try {
+        await adapter.sendSigningRequest('nonexistent')
+        fail('Expected error')
+      } catch (err) {
+        expect(err).toBeInstanceOf(EnfNF)
+      }
+    })
+
+    it('throws when envelopeId is empty', async () => {
+      await expect(adapter.sendSigningRequest('')).rejects.toThrow('envelopeId is required')
+    })
+  })
+
+  describe('getSigningRequestStatus', () => {
+    it('returns status for existing envelope', async () => {
+      const created = await adapter.createSigningRequest({
+        title: 'Test',
+        signers: [{ name: 'Alice', email: 'alice@example.com' }],
+      })
+
+      const status = await adapter.getSigningRequestStatus(created.envelopeId)
+      expect(status.platformStatus).toBe('awaiting_signature')
+      expect(status.envelopeId).toBe(created.envelopeId)
+    })
+
+    it('throws EnvelopeNotFoundError for unknown envelope', async () => {
+      try {
+        await adapter.getSigningRequestStatus('nonexistent')
+        fail('Expected error')
+      } catch (err) {
+        expect(err).toBeInstanceOf(EnfNF)
+      }
+    })
+  })
+
+  describe('voidSigningRequest', () => {
+    it('voids an existing envelope', async () => {
+      const created = await adapter.createSigningRequest({
+        title: 'Test',
+        signers: [{ name: 'Alice', email: 'alice@example.com' }],
+      })
+
+      const result = await adapter.voidSigningRequest(created.envelopeId, 'Changed mind')
+      expect(result.platformStatus).toBe('voided')
+      expect(result.voidedAt).toBeTruthy()
+    })
+
+    it('is idempotent when voiding an already-voided envelope', async () => {
+      const created = await adapter.createSigningRequest({
+        title: 'Test',
+        signers: [{ name: 'Alice', email: 'alice@example.com' }],
+      })
+
+      await adapter.voidSigningRequest(created.envelopeId)
+      const result = await adapter.voidSigningRequest(created.envelopeId)
+      expect(result.platformStatus).toBe('voided')
+    })
+
+    it('throws EnvelopeAlreadyCompletedError for signed envelope', async () => {
+      const created = await adapter.createSigningRequest({
+        title: 'Test',
+        signers: [{ name: 'Alice', email: 'alice@example.com' }],
+      })
+
+      await adapter.sendSigningRequest(created.envelopeId)
+      adapter.simulateSigning(created.envelopeId)
+
+      try {
+        await adapter.voidSigningRequest(created.envelopeId)
+        fail('Expected EnvelopeAlreadyCompletedError')
+      } catch (err) {
+        expect(err).toBeInstanceOf(EnfComp)
+      }
+    })
+
+    it('throws EnvelopeNotFoundError for unknown envelope', async () => {
+      try {
+        await adapter.voidSigningRequest('nonexistent')
+        fail('Expected EnvelopeNotFoundError')
+      } catch (err) {
+        expect(err).toBeInstanceOf(EnfNF)
+      }
+    })
+
+    it('throws when envelopeId is empty', async () => {
+      await expect(adapter.voidSigningRequest('')).rejects.toThrow('envelopeId is required')
+    })
+  })
+
+  describe('downloadSignedDocument', () => {
+    it('downloads a signed document', async () => {
+      const created = await adapter.createSigningRequest({
+        title: 'Test',
+        signers: [{ name: 'Alice', email: 'alice@example.com' }],
+      })
+
+      await adapter.sendSigningRequest(created.envelopeId)
+      adapter.simulateSigning(created.envelopeId)
+
+      const doc = await adapter.downloadSignedDocument(created.envelopeId)
+      expect(doc.envelopeId).toBe(created.envelopeId)
+      expect(doc.fileName).toMatch(/\.pdf$/)
+      expect(doc.fileType).toBe('application/pdf')
+      expect(doc.fileSizeBytes).toBeGreaterThan(0)
+      expect(doc.content).toBeInstanceOf(Buffer)
+    })
+
+    it('throws DocumentNotReadyError for unsigned envelope', async () => {
+      const created = await adapter.createSigningRequest({
+        title: 'Test',
+        signers: [{ name: 'Alice', email: 'alice@example.com' }],
+      })
+
+      try {
+        await adapter.downloadSignedDocument(created.envelopeId)
+        fail('Expected DocumentNotReadyError')
+      } catch (err) {
+        expect(err).toBeInstanceOf(DocNR)
+      }
+    })
+
+    it('throws DocumentNotAvailableError for voided envelope', async () => {
+      const created = await adapter.createSigningRequest({
+        title: 'Test',
+        signers: [{ name: 'Alice', email: 'alice@example.com' }],
+      })
+
+      await adapter.voidSigningRequest(created.envelopeId)
+
+      try {
+        await adapter.downloadSignedDocument(created.envelopeId)
+        fail('Expected DocumentNotAvailableError')
+      } catch (err) {
+        expect(err).toBeInstanceOf(DocNA)
+      }
+    })
+
+    it('throws EnvelopeNotFoundError for unknown envelope', async () => {
+      try {
+        await adapter.downloadSignedDocument('nonexistent')
+        fail('Expected EnvelopeNotFoundError')
+      } catch (err) {
+        expect(err).toBeInstanceOf(EnfNF)
+      }
+    })
+
+    it('throws when envelopeId is empty', async () => {
+      await expect(adapter.downloadSignedDocument('')).rejects.toThrow('envelopeId is required')
+    })
+  })
+
+  describe('mock provider in factory', () => {
+    it('can be created via the factory', () => {
+      const mocks = createESignAdapter('mock')
+      expect(mocks.constructor.name).toBe('MockESignProvider')
+    })
+
+    it('implements the same interface as DropboxSignAdapter', () => {
+      const mock = createESignAdapter('mock')
+      const dropbox = createESignAdapter('dropbox_sign', TEST_API_KEY)
+
+      const mockMethods = Object.getOwnPropertyNames(Object.getPrototypeOf(mock)).sort()
+      const dropboxMethods = Object.getOwnPropertyNames(Object.getPrototypeOf(dropbox)).sort()
+
+      const sharedMethods = mockMethods.filter((m) => dropboxMethods.includes(m) && m !== 'constructor')
+      expect(sharedMethods).toContain('createSigningRequest')
+      expect(sharedMethods).toContain('sendSigningRequest')
+      expect(sharedMethods).toContain('getSigningRequestStatus')
+      expect(sharedMethods).toContain('voidSigningRequest')
+      expect(sharedMethods).toContain('downloadSignedDocument')
+      expect(sharedMethods).toContain('buildLegalDocumentUpdate')
+    })
+  })
+})
+
+describe('Provider-swap verification', () => {
+  const { MockESignProvider: MockProv } = require('@/lib/esign/MockESignProvider')
+
+  async function exerciseProviderAdapter(adapter: import('@/lib/esign/types').ESignAdapter, envelopeId?: string) {
+    if (envelopeId) {
+      await adapter.sendSigningRequest(envelopeId)
+      return adapter.getSigningRequestStatus(envelopeId)
+    }
+
+    const createResult = await adapter.createSigningRequest({
+      title: 'Provider Swap Test',
+      signers: [{ name: 'Swap Tester', email: 'swap@test.com' }],
+    })
+    await adapter.sendSigningRequest(createResult.envelopeId)
+    return adapter.getSigningRequestStatus(createResult.envelopeId)
+  }
+
+  it('works identically with DropboxSignAdapter and MockESignProvider when calling code is unchanged', async () => {
+    const mockAdapter = new MockProv()
+
+    const mockResult = await exerciseProviderAdapter(mockAdapter)
+    expect(mockResult.platformStatus).toBe('awaiting_signature')
+
+    const dropboxAdapter = new DropboxSignAdapter(TEST_API_KEY)
+    const responseData = {
+      signature_request: {
+        signature_request_id: 'sr_swap_test',
+        status: 'awaiting_signature',
+        signatures: [],
+      },
+    }
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue(responseData),
+      text: jest.fn().mockResolvedValue(JSON.stringify(responseData)),
+    })
+
+    const dropboxResult = await exerciseProviderAdapter(dropboxAdapter, 'sr_swap_test')
+    expect(dropboxResult.platformStatus).toBe(mockResult.platformStatus)
+
+    jest.restoreAllMocks()
+  })
+
+  it('the same function works with mock via DI', async () => {
+    const adapter: import('@/lib/esign/types').ESignAdapter = createESignAdapter('mock')
+
+    const result = await exerciseProviderAdapter(adapter)
+    expect(result.envelopeId).toMatch(/^mock_/)
+    expect(result.platformStatus).toBe('awaiting_signature')
+  })
+})
+
+describe('DropboxSignAdapter - voidSigningRequest', () => {
+  let adapter: DropboxSignAdapter
+  const { EnvelopeAlreadyCompletedError: EnfComp, EnvelopeNotFoundError: EnfNF } = require('@/lib/esign/types')
+
+  beforeEach(() => {
+    adapter = new DropboxSignAdapter(TEST_API_KEY)
+  })
+
+  it('sends cancel request and returns voided result', async () => {
+    const responseData = {
+      signature_request: {
+        signature_request_id: 'sr_void_test',
+        status: 'voided',
+      },
+    }
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue(responseData),
+      text: jest.fn().mockResolvedValue(JSON.stringify(responseData)),
+    })
+
+    const result = await adapter.voidSigningRequest('sr_void_test', 'No longer needed')
+    expect(result.platformStatus).toBe('voided')
+    expect(result.voidedAt).toBeTruthy()
+    expect(result.envelopeId).toBe('sr_void_test')
+
+    jest.restoreAllMocks()
+  })
+
+  it('throws for empty envelopeId', async () => {
+    await expect(adapter.voidSigningRequest('')).rejects.toThrow('envelopeId is required')
+  })
+
+  it('handles 404 from provider', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: jest.fn().mockResolvedValue({ error: { error_name: 'not_found', error_msg: 'Not found' } }),
+      text: jest.fn().mockResolvedValue('Not found'),
+    })
+
+    try {
+      await adapter.voidSigningRequest('sr_nonexistent')
+      fail('Expected error')
+    } catch (err) {
+      expect(err).toBeInstanceOf(EnfNF)
+    }
+
+    jest.restoreAllMocks()
+  })
+
+  it('throws EnvelopeAlreadyCompletedError for signed envelope', async () => {
+    const responseData = {
+      signature_request: {
+        signature_request_id: 'sr_signed',
+        status: 'signed',
+      },
+    }
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue(responseData),
+      text: jest.fn().mockResolvedValue(JSON.stringify(responseData)),
+    })
+
+    try {
+      await adapter.voidSigningRequest('sr_signed')
+      fail('Expected EnvelopeAlreadyCompletedError')
+    } catch (err) {
+      expect(err).toBeInstanceOf(EnfComp)
+    }
+
+    jest.restoreAllMocks()
+  })
+
+  it('handles 401 unauthorized', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: jest.fn().mockResolvedValue({ error: { error_name: 'unauthorized', error_msg: 'Unauthorized' } }),
+      text: jest.fn().mockResolvedValue('Unauthorized'),
+    })
+
+    await expect(adapter.voidSigningRequest('sr_abc')).rejects.toThrow('Invalid Dropbox Sign API key')
+
+    jest.restoreAllMocks()
+  })
+
+  it('handles 429 rate limit', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: jest.fn().mockResolvedValue({ error: { error_name: 'rate_limit', error_msg: 'Rate limited' } }),
+      text: jest.fn().mockResolvedValue('Rate limited'),
+    })
+
+    const err = await adapter.voidSigningRequest('sr_abc').catch((e) => e)
+    expect(err.retryable).toBe(true)
+
+    jest.restoreAllMocks()
+  })
+})
+
+describe('DropboxSignAdapter - parseVoidResponse', () => {
+  let adapter: DropboxSignAdapter
+  const { EnvelopeAlreadyCompletedError: EnfComp } = require('@/lib/esign/types')
+
+  beforeEach(() => {
+    adapter = new DropboxSignAdapter(TEST_API_KEY)
+  })
+
+  it('parses successful void response', () => {
+    const response = {
+      signature_request: {
+        signature_request_id: 'sr_void',
+        status: 'voided',
+      },
+    }
+    const result = adapter.parseVoidResponse(response, 'sr_void')
+    expect(result.platformStatus).toBe('voided')
+    expect(result.voidedAt).toBeTruthy()
+  })
+
+  it('returns error status when provider returns error', () => {
+    const response = {
+      error: { error_msg: 'Not found', error_name: 'not_found' },
+    }
+    expect(() => adapter.parseVoidResponse(response, 'sr_notfound')).toThrow('not found')
+  })
+
+  it('throws for already signed envelope', () => {
+    const response = {
+      signature_request: {
+        signature_request_id: 'sr_signed',
+        status: 'signed',
+      },
+    }
+    expect(() => adapter.parseVoidResponse(response, 'sr_signed')).toThrow(EnfComp)
+  })
+})
+
+describe('DropboxSignAdapter - downloadSignedDocument', () => {
+  let adapter: DropboxSignAdapter
+
+  beforeEach(() => {
+    adapter = new DropboxSignAdapter(TEST_API_KEY)
+  })
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  it('downloads PDF binary and returns document info', async () => {
+    const pdfContent = Buffer.from('%PDF-1.4 mock binary content')
+    const arrayBuffer = pdfContent.buffer.slice(pdfContent.byteOffset, pdfContent.byteOffset + pdfContent.length)
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Map([
+        ['content-type', 'application/pdf'],
+        ['content-disposition', 'attachment; filename="agreement.pdf"'],
+      ]),
+      arrayBuffer: jest.fn().mockResolvedValue(arrayBuffer),
+    })
+
+    const doc = await adapter.downloadSignedDocument('sr_doc_test')
+    expect(doc.envelopeId).toBe('sr_doc_test')
+    expect(doc.fileName).toBe('agreement.pdf')
+    expect(doc.fileType).toBe('application/pdf')
+    expect(doc.fileSizeBytes).toBe(pdfContent.length)
+    expect(Buffer.from(doc.content)).toEqual(pdfContent)
+  })
+
+  it('uses envelopeId as fallback filename when no content-disposition', async () => {
+    const pdfContent = Buffer.from('%PDF-1.4 mock')
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Map([
+        ['content-type', 'application/pdf'],
+      ]),
+      arrayBuffer: jest.fn().mockResolvedValue(pdfContent.buffer),
+    })
+
+    const doc = await adapter.downloadSignedDocument('sr_fallback')
+    expect(doc.fileName).toBe('sr_fallback.pdf')
+  })
+
+  it('throws for empty envelopeId', async () => {
+    await expect(adapter.downloadSignedDocument('')).rejects.toThrow('envelopeId is required')
+  })
+
+  it('handles 401 unauthorized', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Map(),
+      text: jest.fn().mockResolvedValue('Unauthorized'),
+    })
+
+    await expect(adapter.downloadSignedDocument('sr_abc')).rejects.toThrow('Invalid Dropbox Sign API key')
+  })
+
+  it('handles 404 not found', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      headers: new Map(),
+      text: jest.fn().mockResolvedValue('Not found'),
+    })
+
+    const { EnvelopeNotFoundError: EnfNF } = require('@/lib/esign/types')
+    try {
+      await adapter.downloadSignedDocument('sr_nonexistent')
+      fail('Expected error')
+    } catch (err) {
+      expect(err).toBeInstanceOf(EnfNF)
+    }
+  })
+})
+
+describe('DropboxSignAdapter - buildLegalDocumentUpdate with void', () => {
+  let adapter: DropboxSignAdapter
+
+  beforeEach(() => {
+    adapter = new DropboxSignAdapter(TEST_API_KEY)
+  })
+
+  it('includes voided_at for VoidSigningRequestResult', () => {
+    const result = {
+      envelopeId: 'sr_void',
+      providerName: 'dropbox_sign' as const,
+      providerStatus: 'voided',
+      platformStatus: 'voided' as const,
+      voidedAt: '2026-06-29T12:00:00.000Z',
+    }
+    const update = adapter.buildLegalDocumentUpdate(result)
+    expect(update.voided_at).toEqual(new Date('2026-06-29T12:00:00.000Z'))
+    expect(update.platform_status).toBe('voided')
+  })
+})
+
+describe('Factory with mock provider', () => {
+  it('creates mock provider via factory using mock name', () => {
+    const adapter = createESignAdapter('mock')
+    expect(adapter.constructor.name).toBe('MockESignProvider')
+  })
+
+  it('mock provider full lifecycle works', async () => {
+    const adapter = createESignAdapter('mock')
+
+    const createResult = await adapter.createSigningRequest({
+      title: 'Lifecycle Test',
+      signers: [{ name: 'Alice', email: 'alice@example.com' }],
+    })
+    expect(createResult.status).toBe('sent')
+
+    const sendResult = await adapter.sendSigningRequest(createResult.envelopeId)
+    expect(sendResult.status).toBe('sent')
+
+    const voidResult = await adapter.voidSigningRequest(createResult.envelopeId)
+    expect(voidResult.platformStatus).toBe('voided')
+
+    const status = await adapter.getSigningRequestStatus(createResult.envelopeId)
+    expect(status.platformStatus).toBe('voided')
+  })
+})
