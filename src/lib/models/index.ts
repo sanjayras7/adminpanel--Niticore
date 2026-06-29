@@ -9,6 +9,8 @@ import { LegalDocument } from './LegalDocument'
 import { OrganizationAdminInvite } from './OrganizationAdminInvite'
 import { Module } from './Module'
 import { OrganizationModuleConfig } from './OrganizationModuleConfig'
+import { OrganizationFrameworkSelection } from './OrganizationFrameworkSelection'
+import { OrganizationIntegrationIntent } from './OrganizationIntegrationIntent'
 
 export {
   InternalUser,
@@ -22,6 +24,8 @@ export {
   OrganizationAdminInvite,
   Module,
   OrganizationModuleConfig,
+  OrganizationFrameworkSelection,
+  OrganizationIntegrationIntent,
 }
 
 export function initModels(): void {
@@ -36,4 +40,6 @@ export function initModels(): void {
   OrganizationAdminInvite
   Module
   OrganizationModuleConfig
+  OrganizationFrameworkSelection
+  OrganizationIntegrationIntent
 }

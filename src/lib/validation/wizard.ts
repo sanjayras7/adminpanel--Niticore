@@ -1,8 +1,10 @@
-import { CustomerProfileData, PlanLifecycleData } from '@/lib/wizard/types'
+import { CustomerProfileData, PlanLifecycleData, FrameworkStepData, IntegrationIntentData } from '@/lib/wizard/types'
 
 const SLUG_REGEX = /^[a-z0-9-]+$/
 const DOMAIN_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9-]*(\.[a-zA-Z]{2,})+$/
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+const VALID_RISK_THRESHOLDS = ['low', 'medium', 'high', 'critical', 'all']
 
 export function validateCustomerProfile(data: CustomerProfileData): Record<string, string> {
   const errors: Record<string, string> = {}
@@ -83,12 +85,58 @@ function isValidISODate(dateString: string): boolean {
   return date instanceof Date && !isNaN(date.getTime())
 }
 
+export function validateFrameworkSelection(data: FrameworkStepData): Record<string, string> {
+  const errors: Record<string, string> = {}
+
+  if (!data.organization_id || data.organization_id.trim().length === 0) {
+    errors.organization_id = 'Organization ID is required'
+  }
+
+  if (!Array.isArray(data.framework_selections)) {
+    errors.framework_selections = 'Framework selections must be an array'
+    return errors
+  }
+
+  for (let i = 0; i < data.framework_selections.length; i++) {
+    const sel = data.framework_selections[i]
+    const prefix = `framework_selections[${i}]`
+
+    if (sel.risk_threshold && !VALID_RISK_THRESHOLDS.includes(sel.risk_threshold)) {
+      errors[`${prefix}.risk_threshold`] = `Invalid risk threshold "${sel.risk_threshold}". Must be one of: ${VALID_RISK_THRESHOLDS.join(', ')}`
+    }
+  }
+
+  return errors
+}
+
+export function validateIntegrationIntent(data: IntegrationIntentData): Record<string, string> {
+  const errors: Record<string, string> = {}
+
+  if (!data.organization_id || data.organization_id.trim().length === 0) {
+    errors.organization_id = 'Organization ID is required'
+  }
+
+  if (data.domain !== undefined && data.domain !== null && data.domain.length > 255) {
+    errors.domain = 'Domain must be 255 characters or less'
+  }
+
+  if (data.sso_provider !== undefined && data.sso_provider !== null && data.sso_provider.length > 100) {
+    errors.sso_provider = 'SSO provider must be 100 characters or less'
+  }
+
+  return errors
+}
+
 export function validateStep(stepNumber: number, data: any): Record<string, string> {
   switch (stepNumber) {
     case 1:
       return validateCustomerProfile(data)
     case 2:
       return validatePlanLifecycle(data)
+    case 5:
+      return validateFrameworkSelection(data)
+    case 6:
+      return validateIntegrationIntent(data)
     default:
       return {}
   }
