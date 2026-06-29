@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { WizardState } from '@/lib/models'
-import { getAuthUser } from '@/lib/auth'
+import { requirePermission } from '@/lib/auth/requirePermission'
+import type { InternalSessionUser } from '@/lib/auth/session'
 
-export async function GET(request: NextRequest): Promise<NextResponse> {
-  try {
-    await getAuthUser(request)
-  } catch {
-    return NextResponse.json({ error: 'unauthorized', message: 'Authentication required' }, { status: 401 })
-  }
-
+async function handler(
+  request: NextRequest,
+  { internalUser }: { internalUser: InternalSessionUser },
+): Promise<NextResponse> {
   const { searchParams } = new URL(request.url)
   const leadId = searchParams.get('leadId')
 
@@ -66,3 +64,5 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'internal_error', message: 'Failed to load review data.' }, { status: 500 })
   }
 }
+
+export const GET = requirePermission('onboarding', 'read')(handler)

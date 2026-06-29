@@ -1,22 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
+import { Lead } from '@/lib/models/Lead'
+import { requirePermission } from '@/lib/auth/requirePermission'
+import { logAuditEvent } from '@/lib/audit'
+import { niticore_onboard_organization } from '@/lib/onboard-organization'
 import { sequelize } from '@/lib/sequelize'
-import { getAuthUser, requireMutationAuth } from '@/lib/auth'
-import { writeAuditEvent } from '@/lib/audit'
 import { sendMagicLinkEmail } from '@/lib/email'
 import { checkRateLimit } from '@/lib/rate-limiter'
+import type { InternalSessionUser } from '@/lib/auth/session'
 
 interface ConfirmRequest {
   leadId: string
   organizationId: string
   sendAdminInvite: boolean
   overrideReason?: string
-}
-
-interface ProvisioningResult {
-  success: boolean
-  tenantHash: string
-  provisioningLogId: string
 }
 
 async function checkContractGate(
@@ -85,49 +82,6 @@ async function checkDuplicateProvision(organizationId: string): Promise<boolean>
   return existingRows.length > 0
 }
 
-async function callOnboardOrganization(
-  organizationId: string,
-  actorUserId: string,
-): Promise<ProvisioningResult> {
-  const provisioningLogId = uuidv4()
-
-  await sequelize.query(
-    `INSERT INTO tenant_provisioning_log (id, organization_id, status, started_at, created_at)
-     VALUES (:id, :organizationId, 'in_progress', NOW(), NOW())`,
-    { replacements: { id: provisioningLogId, organizationId }, type: 'INSERT' },
-  )
-
-  try {
-    const fnResult = await sequelize.query(
-      `SELECT * FROM niticore_onboard_organization(:organizationId)`,
-      {
-        replacements: { organizationId },
-        type: 'SELECT',
-      },
-    ) as unknown as Array<{ tenant_hash?: string }>
-
-    const tenantHash = fnResult[0]?.tenant_hash || uuidv4()
-
-    await sequelize.query(
-      `UPDATE tenant_provisioning_log SET status = 'completed', tenant_hash = :tenantHash, completed_at = NOW()
-       WHERE id = :id`,
-      { replacements: { id: provisioningLogId, tenantHash }, type: 'UPDATE' },
-    )
-
-    return { success: true, tenantHash, provisioningLogId }
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : 'Unknown provisioning error'
-
-    await sequelize.query(
-      `UPDATE tenant_provisioning_log SET status = 'failed', error_message = :errorMsg, completed_at = NOW()
-       WHERE id = :id`,
-      { replacements: { id: provisioningLogId, errorMsg }, type: 'UPDATE' },
-    )
-
-    throw err
-  }
-}
-
 async function sendAdminInviteFlow(organizationId: string): Promise<boolean> {
   try {
     const adminResult = await sequelize.query(
@@ -170,14 +124,17 @@ async function sendAdminInviteFlow(organizationId: string): Promise<boolean> {
   }
 }
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
-  let authUser
-  try {
-    authUser = await getAuthUser(request)
-    requireMutationAuth(authUser)
-  } catch (err: unknown) {
-    const status = err instanceof Error && 'statusCode' in err ? (err as { statusCode: number }).statusCode : 403
-    return NextResponse.json({ error: 'forbidden', message: err instanceof Error ? err.message : 'Forbidden' }, { status })
+const CONFIRM_ALLOWED_ROLES = ['Super Admin', 'Implementation Manager']
+
+async function handler(
+  request: NextRequest,
+  { internalUser }: { internalUser: InternalSessionUser },
+): Promise<NextResponse> {
+  if (!CONFIRM_ALLOWED_ROLES.includes(internalUser.roleName)) {
+    return NextResponse.json(
+      { error: 'forbidden', message: 'Only Super Admin and Implementation Manager can confirm provisioning.' },
+      { status: 403 },
+    )
   }
 
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
@@ -217,7 +174,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     if (leadCheck[0].converted_organization_id !== body.organizationId) {
       return NextResponse.json(
-        { error: 'invalid_request', message: 'leadId and organizationId do not match. The lead and organization must point to the same converted lead.' },
+        { error: 'invalid_request', message: 'leadId and organizationId do not match.' },
         { status: 400 },
       )
     }
@@ -251,38 +208,84 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       )
     }
 
-    const provisioningResult = await callOnboardOrganization(body.organizationId, authUser.id)
+    const lead = await Lead.findByPk(body.leadId)
+    if (!lead) {
+      return NextResponse.json({ error: 'not_found', message: 'Lead not found.' }, { status: 404 })
+    }
+
+    const provisioningLogId = uuidv4()
+    let tenantHash: string
+
+    try {
+      await sequelize.query(
+        `INSERT INTO tenant_provisioning_log (id, organization_id, status, started_at, created_at)
+         VALUES (:id, :organizationId, 'in_progress', NOW(), NOW())`,
+        { replacements: { id: provisioningLogId, organizationId: body.organizationId }, type: 'INSERT' },
+      )
+
+      tenantHash = await niticore_onboard_organization({
+        company_name: lead.company_name,
+        contact_first_name: lead.contact_first_name,
+        contact_last_name: lead.contact_last_name,
+        work_email: lead.work_email,
+        company_domain: lead.company_domain,
+        region: lead.region,
+        company_size: lead.company_size,
+        interested_modules_json: lead.interested_modules_json,
+        interested_frameworks_json: lead.interested_frameworks_json,
+      })
+
+      await sequelize.query(
+        `UPDATE tenant_provisioning_log SET status = 'completed', tenant_hash = :tenantHash, completed_at = NOW()
+         WHERE id = :id`,
+        { replacements: { id: provisioningLogId, tenantHash }, type: 'UPDATE' },
+      )
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown provisioning error'
+
+      await sequelize.query(
+        `UPDATE tenant_provisioning_log SET status = 'failed', error_message = :errorMsg, completed_at = NOW()
+         WHERE id = :id`,
+        { replacements: { id: provisioningLogId, errorMsg }, type: 'UPDATE' },
+      )
+
+      throw err
+    }
 
     let inviteSent = false
     if (body.sendAdminInvite) {
       inviteSent = await sendAdminInviteFlow(body.organizationId)
     }
 
-    await writeAuditEvent({
-      actor_internal_user_id: authUser.id,
-      actor_role: authUser.roleName,
-      action: 'onboarding.confirm',
-      target_type: 'organization',
-      target_id: body.organizationId,
-      organization_id: body.organizationId,
-      lead_id: body.leadId,
-      after_values: {
-        provisioningLogId: provisioningResult.provisioningLogId,
-        tenantHash: provisioningResult.tenantHash,
-        inviteSent,
-        gateStatus: gateCheck.status,
-      },
-      reason: body.overrideReason || null,
-      ip_address: ip,
-      user_agent: userAgent,
-    })
+    try {
+      await logAuditEvent({
+        actorInternalUserId: internalUser.id,
+        actorRole: internalUser.roleName,
+        action: 'onboarding.confirm',
+        targetType: 'organization',
+        targetId: body.organizationId,
+        organizationId: body.organizationId,
+        leadId: body.leadId,
+        afterValues: {
+          provisioningLogId,
+          tenantHash,
+          inviteSent,
+          gateStatus: gateCheck.status,
+        },
+        reason: body.overrideReason || null,
+        ipAddress: ip,
+        userAgent,
+      })
+    } catch (err) {
+      console.error('[ONBOARDING] Audit write failed:', err)
+    }
 
     return NextResponse.json(
       {
         success: true,
         organizationId: body.organizationId,
-        tenantHash: provisioningResult.tenantHash,
-        provisioningLogId: provisioningResult.provisioningLogId,
+        tenantHash,
+        provisioningLogId,
         inviteSent,
       },
       { status: 201 },
@@ -302,3 +305,5 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
   }
 }
+
+export const POST = requirePermission('onboarding', 'create')(handler)

@@ -1,36 +1,70 @@
+import { NextRequest } from 'next/server'
 import { checkRateLimit, resetRateLimiter } from '@/lib/rate-limiter'
 
 const mockDate = new Date('2026-06-01T00:00:00Z')
 
+jest.mock('@/lib/auth/session', () => {
+  const getInternalSession = jest.fn()
+  return { getInternalSession, isSessionError: jest.fn() }
+})
+
+jest.mock('@/lib/models', () => ({ WizardState: { findOne: jest.fn() } }))
+jest.mock('@/lib/models/Lead', () => ({ Lead: { findByPk: jest.fn() } }))
+jest.mock('@/lib/sequelize', () => ({ sequelize: { query: jest.fn() } }))
+jest.mock('@/lib/audit', () => ({ logAuditEvent: jest.fn() }))
+jest.mock('@/lib/onboard-organization', () => ({ niticore_onboard_organization: jest.fn() }))
+jest.mock('@/lib/email', () => ({ sendMagicLinkEmail: jest.fn() }))
+jest.mock('@/lib/rate-limiter', () => {
+  const checkRateLimit = jest.fn().mockReturnValue({ allowed: true, retryAfterMs: 0 })
+  const resetRateLimiter = jest.fn()
+  return { checkRateLimit, resetRateLimiter }
+})
+
+import { getInternalSession, isSessionError } from '@/lib/auth/session'
+import { Lead } from '@/lib/models/Lead'
+import { sequelize } from '@/lib/sequelize'
+import { logAuditEvent } from '@/lib/audit'
+import { niticore_onboard_organization } from '@/lib/onboard-organization'
+import { sendMagicLinkEmail } from '@/lib/email'
+import { WizardState } from '@/lib/models'
+
+const mockGetInternalSession = getInternalSession as jest.MockedFunction<typeof getInternalSession>
+const mockIsSessionError = isSessionError as jest.MockedFunction<typeof isSessionError>
+const mockSequelizeQuery = sequelize.query as jest.MockedFunction<typeof sequelize.query>
+const mockLeadFindByPk = Lead.findByPk as jest.MockedFunction<typeof Lead.findByPk>
+const mockLogAuditEvent = logAuditEvent as jest.MockedFunction<typeof logAuditEvent>
+const mockOnboardOrganization = niticore_onboard_organization as jest.MockedFunction<typeof niticore_onboard_organization>
+const mockSendMagicLinkEmail = sendMagicLinkEmail as jest.MockedFunction<typeof sendMagicLinkEmail>
+const mockWizardFindOne = WizardState.findOne as jest.MockedFunction<typeof WizardState.findOne>
+
+const mockSessionUser = {
+  id: 'user-1',
+  name: 'Test',
+  surname: 'User',
+  email: 'test@example.com',
+  roleId: 'role-1',
+  roleName: 'Super Admin',
+  status: 'active' as const,
+  totpEnabled: true,
+  sessionId: 'session-1',
+}
+
 beforeEach(() => {
+  jest.clearAllMocks()
   resetRateLimiter()
 })
 
-function mockSequelizeQuery(result: unknown, reject = false) {
-  return jest.fn().mockImplementation(() => {
-    if (reject) return Promise.reject(new Error('DB error'))
-    return Promise.resolve(result)
-  })
-}
-
 describe('GET /api/v1/internal/onboarding/review', () => {
-  beforeEach(() => {
-    jest.resetModules()
-  })
-
   it('returns 401 when not authenticated', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockRejectedValue(new (class extends Error {
-        statusCode = 401
-        constructor() {
-          super('unauthorized')
-        }
-      })()),
-      requireMutationAuth: jest.fn(),
-    }))
+    mockIsSessionError.mockReturnValue(true)
+    mockGetInternalSession.mockResolvedValue({
+      error: 'unauthorized',
+      message: 'Authentication required',
+      status: 401,
+    })
 
     const { GET } = await import('@/app/api/v1/internal/onboarding/review/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/review?leadId=lead-1') as never
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/review?leadId=lead-1')
     const response = await GET(request)
     const body = await response.json()
 
@@ -39,13 +73,11 @@ describe('GET /api/v1/internal/onboarding/review', () => {
   })
 
   it('returns 400 when leadId is missing', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
 
     const { GET } = await import('@/app/api/v1/internal/onboarding/review/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/review') as never
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/review')
     const response = await GET(request)
     const body = await response.json()
 
@@ -54,19 +86,12 @@ describe('GET /api/v1/internal/onboarding/review', () => {
   })
 
   it('returns 404 when no wizard state exists', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
-
-    jest.doMock('@/lib/models', () => ({
-      WizardState: {
-        findOne: jest.fn().mockResolvedValue(null),
-      },
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
+    mockWizardFindOne.mockResolvedValue(null)
 
     const { GET } = await import('@/app/api/v1/internal/onboarding/review/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/review?leadId=nonexistent') as never
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/review?leadId=nonexistent')
     const response = await GET(request)
     const body = await response.json()
 
@@ -74,35 +99,28 @@ describe('GET /api/v1/internal/onboarding/review', () => {
     expect(body.error).toBe('not_found')
   })
 
-  it('returns review data with warnings for incomplete steps', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
-
-    jest.doMock('@/lib/models', () => ({
-      WizardState: {
-        findOne: jest.fn().mockResolvedValue({
-          id: 'ws-1',
-          lead_id: 'lead-1',
-          organization_id: 'org-1',
-          step_data: {
-            organization: { name: 'Test Corp', domain: 'testcorp.com' },
-            modules: [{ moduleId: 'mod-1', subModuleIds: ['sub-1'] }],
-            frameworks: ['fw-1'],
-            adminInvite: { invited: true, email: 'admin@testcorp.com', status: 'sent' },
-          },
-          current_step: 'confirm',
-          completed_steps: ['organization', 'modules', 'admin'],
-          created_at: mockDate,
-          updated_at: mockDate,
-          deleted_at: null,
-        }),
+  it('returns review data with no warnings for complete state', async () => {
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
+    mockWizardFindOne.mockResolvedValue({
+      id: 'ws-1',
+      lead_id: 'lead-1',
+      organization_id: 'org-1',
+      step_data: {
+        organization: { name: 'Test Corp', domain: 'testcorp.com' },
+        modules: [{ moduleId: 'mod-1', subModuleIds: ['sub-1'] }],
+        frameworks: ['fw-1'],
+        adminInvite: { invited: true, email: 'admin@testcorp.com', status: 'sent' },
       },
-    }))
+      current_step: 'confirm',
+      completed_steps: ['organization', 'modules', 'admin'],
+      created_at: mockDate,
+      updated_at: mockDate,
+      deleted_at: null,
+    } as any)
 
     const { GET } = await import('@/app/api/v1/internal/onboarding/review/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/review?leadId=lead-1') as never
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/review?leadId=lead-1')
     const response = await GET(request)
     const body = await response.json()
 
@@ -117,29 +135,22 @@ describe('GET /api/v1/internal/onboarding/review', () => {
   })
 
   it('returns warnings when steps are missing', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
-
-    jest.doMock('@/lib/models', () => ({
-      WizardState: {
-        findOne: jest.fn().mockResolvedValue({
-          id: 'ws-2',
-          lead_id: 'lead-2',
-          organization_id: null,
-          step_data: {},
-          current_step: 'organization',
-          completed_steps: [],
-          created_at: mockDate,
-          updated_at: mockDate,
-          deleted_at: null,
-        }),
-      },
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
+    mockWizardFindOne.mockResolvedValue({
+      id: 'ws-2',
+      lead_id: 'lead-2',
+      organization_id: null,
+      step_data: {},
+      current_step: 'organization',
+      completed_steps: [],
+      created_at: mockDate,
+      updated_at: mockDate,
+      deleted_at: null,
+    } as any)
 
     const { GET } = await import('@/app/api/v1/internal/onboarding/review/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/review?leadId=lead-2') as never
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/review?leadId=lead-2')
     const response = await GET(request)
     const body = await response.json()
 
@@ -152,19 +163,12 @@ describe('GET /api/v1/internal/onboarding/review', () => {
   })
 
   it('returns 500 on DB error', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
-
-    jest.doMock('@/lib/models', () => ({
-      WizardState: {
-        findOne: jest.fn().mockRejectedValue(new Error('DB error')),
-      },
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
+    mockWizardFindOne.mockRejectedValue(new Error('DB error'))
 
     const { GET } = await import('@/app/api/v1/internal/onboarding/review/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/review?leadId=lead-1') as never
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/review?leadId=lead-1')
     const response = await GET(request)
     const body = await response.json()
 
@@ -174,445 +178,296 @@ describe('GET /api/v1/internal/onboarding/review', () => {
 })
 
 describe('POST /api/v1/internal/onboarding/confirm', () => {
-  beforeEach(() => {
-    jest.resetModules()
-  })
-
   const validBody = {
     leadId: 'lead-1',
     organizationId: 'org-1',
     sendAdminInvite: true,
   }
 
-  function mockDbQueries(options: {
-    leadResult?: Array<Record<string, unknown>>
-    orgResult?: Array<Record<string, unknown>>
-    docResult?: Array<Record<string, unknown>>
-    gateResult?: Array<Record<string, unknown>>
-    provisioningLogFind?: Array<Record<string, unknown>>
-    onboardResult?: Array<Record<string, unknown>>
-    inviteResult?: Array<Record<string, unknown>>
-    rejectQuery?: boolean
-  }) {
-    const leadRows = options.leadResult ?? [{ id: 'lead-1', converted_organization_id: 'org-1' }]
-    const orgRows = options.orgResult ?? [{ id: 'org-1' }]
-    const docRows = options.docResult ?? [{ platform_status: 'signed', storage_key: 'contracts/abc.pdf' }]
-    const gateRows = options.gateResult ?? []
-    const provisionLogRows = options.provisioningLogFind ?? []
-    const onboardRows = options.onboardResult ?? [{ tenant_hash: 'th-abc-123' }]
-    const inviteRows = options.inviteResult ?? []
-
-    let callCount = 0
-
-    jest.doMock('@/lib/sequelize', () => ({
-      sequelize: {
-        query: jest.fn().mockImplementation((_sql: string, opts?: { replacements?: Record<string, unknown>; type?: string }) => {
-          if (options.rejectQuery) {
-            return Promise.reject(new Error('DB error'))
-          }
-
-          callCount++
-
-          if (opts?.replacements?.leadId === 'lead-1' && !opts?.replacements?.orgId && !opts?.replacements?.organizationId) {
-            return Promise.resolve(leadRows)
-          }
-          if (opts?.replacements?.orgId === 'org-1') {
-            return Promise.resolve(orgRows)
-          }
-          if ((opts?.replacements?.organizationId === 'org-1' || opts?.replacements?.organizationId === 'org-1') && callCount === 3) {
-            return Promise.resolve(provisionLogRows)
-          }
-          if (opts?.replacements?.organizationId === 'org-1' && opts?.replacements?.id) {
-            return Promise.resolve([[], {}])
-          }
-
-          return Promise.resolve([[{}], {}])
-        }),
-      },
-    }))
-  }
-
   it('returns 401 when not authenticated', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockRejectedValue(new (class extends Error {
-        statusCode = 401
-        constructor() {
-          super('unauthorized')
-        }
-      })()),
-      requireMutationAuth: jest.fn(),
-    }))
+    mockIsSessionError.mockReturnValue(true)
+    mockGetInternalSession.mockResolvedValue({
+      error: 'unauthorized',
+      message: 'Authentication required',
+      status: 401,
+    })
 
     const { POST } = await import('@/app/api/v1/internal/onboarding/confirm/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/confirm', {
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/confirm', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(validBody),
-    }) as never
-
+    })
     const response = await POST(request)
+
     expect(response.status).toBe(401)
   })
 
-  it('returns 403 for Read-only Auditor', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'auditor-1', roleName: 'Read-only Auditor' }),
-      requireMutationAuth: jest.fn().mockImplementation(() => {
-        throw new (class extends Error {
-          statusCode = 403
-          constructor() {
-            super('Read-only Auditor cannot perform mutations')
-          }
-        })()
-      }),
-    }))
+  it('returns 403 when role lacks permission (Read-only Auditor)', async () => {
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue({
+      ...mockSessionUser,
+      roleName: 'Read-only Auditor',
+    })
 
     const { POST } = await import('@/app/api/v1/internal/onboarding/confirm/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/confirm', {
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/confirm', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'auditor-1' },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(validBody),
-    }) as never
-
+    })
     const response = await POST(request)
+
     expect(response.status).toBe(403)
+    const body = await response.json()
+    expect(body.error).toBe('forbidden')
   })
 
   it('returns 400 when leadId is missing', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
 
     const { POST } = await import('@/app/api/v1/internal/onboarding/confirm/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/confirm', {
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/confirm', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ organizationId: 'org-1', sendAdminInvite: true }),
-    }) as never
-
+    })
     const response = await POST(request)
     const body = await response.json()
+
     expect(response.status).toBe(400)
     expect(body.error).toBe('invalid_request')
   })
 
   it('returns 400 when organizationId is missing', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
 
     const { POST } = await import('@/app/api/v1/internal/onboarding/confirm/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/confirm', {
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/confirm', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ leadId: 'lead-1', sendAdminInvite: true }),
-    }) as never
-
+    })
     const response = await POST(request)
     const body = await response.json()
+
     expect(response.status).toBe(400)
     expect(body.error).toBe('invalid_request')
   })
 
   it('returns 404 when lead is not found', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
-
-    jest.doMock('@/lib/sequelize', () => ({
-      sequelize: {
-        query: jest.fn().mockResolvedValue([]),
-      },
-    }))
-
-    jest.doMock('@/lib/rate-limiter', () => ({
-      checkRateLimit: jest.fn().mockReturnValue({ allowed: true, retryAfterMs: 0 }),
-      resetRateLimiter: jest.fn(),
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
+    mockSequelizeQuery.mockResolvedValue([])
 
     const { POST } = await import('@/app/api/v1/internal/onboarding/confirm/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/confirm', {
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/confirm', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(validBody),
-    }) as never
-
+    })
     const response = await POST(request)
     const body = await response.json()
+
     expect(response.status).toBe(404)
     expect(body.error).toBe('not_found')
   })
 
   it('returns 400 when lead and organization mismatch', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
-
-    jest.doMock('@/lib/sequelize', () => ({
-      sequelize: {
-        query: jest.fn().mockResolvedValue([{ id: 'lead-1', converted_organization_id: 'org-999' }]),
-      },
-    }))
-
-    jest.doMock('@/lib/rate-limiter', () => ({
-      checkRateLimit: jest.fn().mockReturnValue({ allowed: true, retryAfterMs: 0 }),
-      resetRateLimiter: jest.fn(),
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
+    mockSequelizeQuery.mockResolvedValue([{ id: 'lead-1', converted_organization_id: 'org-999' }])
 
     const { POST } = await import('@/app/api/v1/internal/onboarding/confirm/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/confirm', {
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/confirm', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ leadId: 'lead-1', organizationId: 'org-1', sendAdminInvite: true }),
-    }) as never
-
+    })
     const response = await POST(request)
     const body = await response.json()
+
     expect(response.status).toBe(400)
     expect(body.error).toBe('invalid_request')
   })
 
   it('returns 404 when organization is not found', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
 
-    let queryCallCount = 0
-    jest.doMock('@/lib/sequelize', () => ({
-      sequelize: {
-        query: jest.fn().mockImplementation(() => {
-          queryCallCount++
-          if (queryCallCount === 1) return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1' }])
-          return Promise.resolve([])
-        }),
-      },
-    }))
-
-    jest.doMock('@/lib/rate-limiter', () => ({
-      checkRateLimit: jest.fn().mockReturnValue({ allowed: true, retryAfterMs: 0 }),
-      resetRateLimiter: jest.fn(),
-    }))
+    let callCount = 0
+    mockSequelizeQuery.mockImplementation(() => {
+      callCount++
+      if (callCount === 1) return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1' }])
+      return Promise.resolve([])
+    })
 
     const { POST } = await import('@/app/api/v1/internal/onboarding/confirm/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/confirm', {
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/confirm', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(validBody),
-    }) as never
-
+    })
     const response = await POST(request)
     const body = await response.json()
+
     expect(response.status).toBe(404)
     expect(body.error).toBe('not_found')
   })
 
   it('returns 409 when already provisioned', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
 
-    let queryCallCount = 0
-    jest.doMock('@/lib/sequelize', () => ({
-      sequelize: {
-        query: jest.fn().mockImplementation(() => {
-          queryCallCount++
-          if (queryCallCount === 1) return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1' }])
-          if (queryCallCount === 2) return Promise.resolve([{ id: 'org-1' }])
-          if (queryCallCount === 3) return Promise.resolve([{ id: 'log-1' }])
-          return Promise.resolve([[], {}])
-        }),
-      },
-    }))
-
-    jest.doMock('@/lib/rate-limiter', () => ({
-      checkRateLimit: jest.fn().mockReturnValue({ allowed: true, retryAfterMs: 0 }),
-      resetRateLimiter: jest.fn(),
-    }))
+    let callCount = 0
+    mockSequelizeQuery.mockImplementation(() => {
+      callCount++
+      if (callCount === 1) return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1' }])
+      if (callCount === 2) return Promise.resolve([{ id: 'org-1' }])
+      if (callCount === 3) return Promise.resolve([{ id: 'log-1' }])
+      return Promise.resolve([[], {}])
+    })
 
     const { POST } = await import('@/app/api/v1/internal/onboarding/confirm/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/confirm', {
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/confirm', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(validBody),
-    }) as never
-
+    })
     const response = await POST(request)
     const body = await response.json()
+
     expect(response.status).toBe(409)
     expect(body.error).toBe('conflict')
   })
 
   it('returns 403 when contract gate not met and no override', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
 
-    let queryCallCount = 0
-    jest.doMock('@/lib/sequelize', () => ({
-      sequelize: {
-        query: jest.fn().mockImplementation((sql: string) => {
-          queryCallCount++
-
-          if (sql.includes('FROM leads')) {
-            return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1' }])
-          }
-          if (sql.includes('FROM organizations')) {
-            return Promise.resolve([{ id: 'org-1' }])
-          }
-          if (sql.includes('FROM tenant_provisioning_log')) {
-            return Promise.resolve([])
-          }
-          if (sql.includes('FROM legal_documents')) {
-            return Promise.resolve([])
-          }
-          if (sql.includes('FROM gate_overrides')) {
-            return Promise.resolve([])
-          }
-
-          return Promise.resolve([[], {}])
-        }),
-      },
-    }))
-
-    jest.doMock('@/lib/rate-limiter', () => ({
-      checkRateLimit: jest.fn().mockReturnValue({ allowed: true, retryAfterMs: 0 }),
-      resetRateLimiter: jest.fn(),
-    }))
+    mockSequelizeQuery.mockImplementation((sql: string) => {
+      if (sql.includes('FROM leads')) {
+        return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1' }])
+      }
+      if (sql.includes('FROM organizations')) {
+        return Promise.resolve([{ id: 'org-1' }])
+      }
+      if (sql.includes('FROM tenant_provisioning_log')) {
+        return Promise.resolve([])
+      }
+      if (sql.includes('FROM legal_documents')) {
+        return Promise.resolve([])
+      }
+      if (sql.includes('FROM gate_overrides')) {
+        return Promise.resolve([])
+      }
+      return Promise.resolve([[], {}])
+    })
 
     const { POST } = await import('@/app/api/v1/internal/onboarding/confirm/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/confirm', {
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/confirm', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ leadId: 'lead-1', organizationId: 'org-1', sendAdminInvite: false }),
-    }) as never
-
+    })
     const response = await POST(request)
     const body = await response.json()
+
     expect(response.status).toBe(403)
     expect(body.error).toBe('gate_blocked')
     expect(body.gate).toBe('contract_required')
   })
 
   it('returns 403 when gate override exists but overrideReason is missing', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
 
-    let queryCallCount = 0
-    jest.doMock('@/lib/sequelize', () => ({
-      sequelize: {
-        query: jest.fn().mockImplementation((sql: string) => {
-          queryCallCount++
-
-          if (sql.includes('FROM leads')) {
-            return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1' }])
-          }
-          if (sql.includes('FROM organizations')) {
-            return Promise.resolve([{ id: 'org-1' }])
-          }
-          if (sql.includes('FROM tenant_provisioning_log')) {
-            return Promise.resolve([])
-          }
-          if (sql.includes('FROM legal_documents')) {
-            return Promise.resolve([])
-          }
-          if (sql.includes('FROM gate_overrides')) {
-            return Promise.resolve([{ overridden_by: 'user-admin', reason: 'Override reason' }])
-          }
-
-          return Promise.resolve([[], {}])
-        }),
-      },
-    }))
-
-    jest.doMock('@/lib/rate-limiter', () => ({
-      checkRateLimit: jest.fn().mockReturnValue({ allowed: true, retryAfterMs: 0 }),
-      resetRateLimiter: jest.fn(),
-    }))
+    mockSequelizeQuery.mockImplementation((sql: string) => {
+      if (sql.includes('FROM leads')) {
+        return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1' }])
+      }
+      if (sql.includes('FROM organizations')) {
+        return Promise.resolve([{ id: 'org-1' }])
+      }
+      if (sql.includes('FROM tenant_provisioning_log')) {
+        return Promise.resolve([])
+      }
+      if (sql.includes('FROM legal_documents')) {
+        return Promise.resolve([])
+      }
+      if (sql.includes('FROM gate_overrides')) {
+        return Promise.resolve([{ overridden_by: 'user-admin', reason: 'Override reason' }])
+      }
+      return Promise.resolve([[], {}])
+    })
 
     const { POST } = await import('@/app/api/v1/internal/onboarding/confirm/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/confirm', {
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/confirm', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ leadId: 'lead-1', organizationId: 'org-1', sendAdminInvite: false }),
-    }) as never
-
+    })
     const response = await POST(request)
     const body = await response.json()
+
     expect(response.status).toBe(403)
     expect(body.error).toBe('gate_blocked')
   })
 
   it('provisions successfully when contract is signed (happy path)', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
+    mockOnboardOrganization.mockResolvedValue('th-generated-123')
 
-    let queryCallCount = 0
-    jest.doMock('@/lib/sequelize', () => ({
-      sequelize: {
-        query: jest.fn().mockImplementation((sql: string) => {
-          queryCallCount++
+    mockSequelizeQuery.mockImplementation((sql: string) => {
+      if (sql.includes('FROM leads') && !sql.includes('INSERT') && !sql.includes('UPDATE')) {
+        if (sql.includes(':leadId')) {
+          return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1' }])
+        }
+        return Promise.resolve([{ work_email: 'john@testcorp.com' }])
+      }
+      if (sql.includes('FROM organizations')) {
+        return Promise.resolve([{ id: 'org-1' }])
+      }
+      if (sql.includes('FROM tenant_provisioning_log') && sql.includes('WHERE organization_id')) {
+        return Promise.resolve([])
+      }
+      if (sql.includes('FROM legal_documents')) {
+        return Promise.resolve([{ platform_status: 'signed', storage_key: 'contracts/abc.pdf' }])
+      }
+      if (sql.includes('UPDATE tenant_provisioning_log')) {
+        return Promise.resolve([[], {}])
+      }
+      if (sql.includes('INSERT INTO tenant_provisioning_log')) {
+        return Promise.resolve([[], {}])
+      }
+      if (sql.includes('organization_admin_invites')) {
+        return Promise.resolve([[], {}])
+      }
+      return Promise.resolve([[], {}])
+    })
 
-          if (sql.includes('FROM leads')) {
-            return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1', work_email: 'admin@testcorp.com' }])
-          }
-          if (sql.includes('FROM organizations')) {
-            return Promise.resolve([{ id: 'org-1' }])
-          }
-          if (sql.includes('FROM tenant_provisioning_log') && sql.includes('WHERE organization_id')) {
-            return Promise.resolve([])
-          }
-          if (sql.includes('FROM legal_documents')) {
-            return Promise.resolve([{ platform_status: 'signed', storage_key: 'contracts/abc.pdf' }])
-          }
-          if (sql.includes('niticore_onboard_organization')) {
-            return Promise.resolve([{ tenant_hash: 'th-generated-123' }])
-          }
-          if (sql.includes('UPDATE tenant_provisioning_log')) {
-            return Promise.resolve([[], {}])
-          }
-          if (sql.includes('INSERT INTO tenant_provisioning_log')) {
-            return Promise.resolve([[], {}])
-          }
-          if (sql.includes('organization_admin_invites')) {
-            return Promise.resolve([[], {}])
-          }
-
-          return Promise.resolve([[], {}])
-        }),
-      },
-    }))
-
-    jest.doMock('@/lib/rate-limiter', () => ({
-      checkRateLimit: jest.fn().mockReturnValue({ allowed: true, retryAfterMs: 0 }),
-      resetRateLimiter: jest.fn(),
-    }))
-
-    jest.doMock('@/lib/email', () => ({
-      sendMagicLinkEmail: jest.fn().mockResolvedValue(undefined),
-    }))
-
-    jest.doMock('@/lib/audit', () => ({
-      writeAuditEvent: jest.fn().mockResolvedValue(undefined),
-    }))
+    mockLeadFindByPk.mockResolvedValue({
+      id: 'lead-1',
+      company_name: 'Test Corp',
+      contact_first_name: 'John',
+      contact_last_name: 'Doe',
+      work_email: 'john@testcorp.com',
+      company_domain: 'testcorp.com',
+      region: 'US',
+      company_size: '50',
+      interested_modules_json: ['mod-1'],
+      interested_frameworks_json: ['fw-1'],
+    } as any)
 
     const { POST } = await import('@/app/api/v1/internal/onboarding/confirm/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/confirm', {
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/confirm', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(validBody),
-    }) as never
-
+    })
     const response = await POST(request)
     const body = await response.json()
 
@@ -624,70 +479,52 @@ describe('POST /api/v1/internal/onboarding/confirm', () => {
   })
 
   it('provisions successfully with gate override (override allowed)', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
+    mockOnboardOrganization.mockResolvedValue('th-override-456')
 
-    let queryCallCount = 0
-    jest.doMock('@/lib/sequelize', () => ({
-      sequelize: {
-        query: jest.fn().mockImplementation((sql: string) => {
-          queryCallCount++
+    mockSequelizeQuery.mockImplementation((sql: string) => {
+      if (sql.includes('FROM leads') && !sql.includes('INSERT') && !sql.includes('UPDATE')) {
+        return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1' }])
+      }
+      if (sql.includes('FROM organizations')) {
+        return Promise.resolve([{ id: 'org-1' }])
+      }
+      if (sql.includes('FROM tenant_provisioning_log') && sql.includes('WHERE organization_id')) {
+        return Promise.resolve([])
+      }
+      if (sql.includes('FROM legal_documents')) {
+        return Promise.resolve([])
+      }
+      if (sql.includes('FROM gate_overrides')) {
+        return Promise.resolve([{ overridden_by: 'user-admin', reason: 'Override reason' }])
+      }
+      if (sql.includes('UPDATE tenant_provisioning_log')) {
+        return Promise.resolve([[], {}])
+      }
+      if (sql.includes('INSERT INTO tenant_provisioning_log')) {
+        return Promise.resolve([[], {}])
+      }
+      if (sql.includes('organization_admin_invites')) {
+        return Promise.resolve([[], {}])
+      }
+      return Promise.resolve([[], {}])
+    })
 
-          if (sql.includes('FROM leads')) {
-            return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1', work_email: 'admin@testcorp.com' }])
-          }
-          if (sql.includes('FROM organizations')) {
-            return Promise.resolve([{ id: 'org-1' }])
-          }
-          if (sql.includes('FROM tenant_provisioning_log') && sql.includes('WHERE organization_id')) {
-            return Promise.resolve([])
-          }
-          if (sql.includes('FROM legal_documents')) {
-            return Promise.resolve([])
-          }
-          if (sql.includes('FROM gate_overrides')) {
-            return Promise.resolve([{ overridden_by: 'user-admin', reason: 'Override reason' }])
-          }
-          if (sql.includes('niticore_onboard_organization')) {
-            return Promise.resolve([{ tenant_hash: 'th-override-456' }])
-          }
-          if (sql.includes('UPDATE tenant_provisioning_log')) {
-            return Promise.resolve([[], {}])
-          }
-          if (sql.includes('INSERT INTO tenant_provisioning_log')) {
-            return Promise.resolve([[], {}])
-          }
-          if (sql.includes('organization_admin_invites')) {
-            return Promise.resolve([[], {}])
-          }
-
-          return Promise.resolve([[], {}])
-        }),
-      },
-    }))
-
-    jest.doMock('@/lib/rate-limiter', () => ({
-      checkRateLimit: jest.fn().mockReturnValue({ allowed: true, retryAfterMs: 0 }),
-      resetRateLimiter: jest.fn(),
-    }))
-
-    jest.doMock('@/lib/email', () => ({
-      sendMagicLinkEmail: jest.fn().mockResolvedValue(undefined),
-    }))
-
-    jest.doMock('@/lib/audit', () => ({
-      writeAuditEvent: jest.fn().mockResolvedValue(undefined),
-    }))
+    mockLeadFindByPk.mockResolvedValue({
+      id: 'lead-1',
+      company_name: 'Test Corp',
+      contact_first_name: 'John',
+      contact_last_name: 'Doe',
+      work_email: 'john@testcorp.com',
+    } as any)
 
     const { POST } = await import('@/app/api/v1/internal/onboarding/confirm/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/confirm', {
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/confirm', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ leadId: 'lead-1', organizationId: 'org-1', sendAdminInvite: false, overrideReason: 'Customer urgent' }),
-    }) as never
-
+    })
     const response = await POST(request)
     const body = await response.json()
 
@@ -697,63 +534,49 @@ describe('POST /api/v1/internal/onboarding/confirm', () => {
   })
 
   it('returns inviteSent false when invite send fails and provisioning succeeds', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
+    mockOnboardOrganization.mockResolvedValue('th-invite-fail')
 
-    let queryCallCount = 0
-    jest.doMock('@/lib/sequelize', () => ({
-      sequelize: {
-        query: jest.fn().mockImplementation((sql: string) => {
-          queryCallCount++
+    mockSequelizeQuery.mockImplementation((sql: string) => {
+      if (sql.includes('FROM leads') && !sql.includes('INSERT') && !sql.includes('UPDATE')) {
+        if (sql.includes(':leadId')) {
+          return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1' }])
+        }
+        return Promise.resolve([{ work_email: 'admin@testcorp.com' }])
+      }
+      if (sql.includes('FROM organizations')) {
+        return Promise.resolve([{ id: 'org-1' }])
+      }
+      if (sql.includes('FROM tenant_provisioning_log') && sql.includes('WHERE organization_id')) {
+        return Promise.resolve([])
+      }
+      if (sql.includes('FROM legal_documents')) {
+        return Promise.resolve([{ platform_status: 'signed', storage_key: 'contracts/abc.pdf' }])
+      }
+      if (sql.includes('UPDATE tenant_provisioning_log')) {
+        return Promise.resolve([[], {}])
+      }
+      if (sql.includes('INSERT INTO tenant_provisioning_log')) {
+        return Promise.resolve([[], {}])
+      }
+      if (sql.includes('organization_admin_invites')) {
+        return Promise.reject(new Error('Invite DB error'))
+      }
+      return Promise.resolve([[], {}])
+    })
 
-          if (sql.includes('FROM leads')) {
-            return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1' }])
-          }
-          if (sql.includes('FROM organizations')) {
-            return Promise.resolve([{ id: 'org-1' }])
-          }
-          if (sql.includes('FROM tenant_provisioning_log') && sql.includes('WHERE organization_id')) {
-            return Promise.resolve([])
-          }
-          if (sql.includes('FROM legal_documents')) {
-            return Promise.resolve([{ platform_status: 'signed', storage_key: 'contracts/abc.pdf' }])
-          }
-          if (sql.includes('niticore_onboard_organization')) {
-            return Promise.resolve([{ tenant_hash: 'th-invite-fail' }])
-          }
-          if (sql.includes('UPDATE tenant_provisioning_log')) {
-            return Promise.resolve([[], {}])
-          }
-          if (sql.includes('INSERT INTO tenant_provisioning_log')) {
-            return Promise.resolve([[], {}])
-          }
-          if (sql.includes('organization_admin_invites')) {
-            return Promise.reject(new Error('Invite DB error'))
-          }
-
-          return Promise.resolve([[], {}])
-        }),
-      },
-    }))
-
-    jest.doMock('@/lib/rate-limiter', () => ({
-      checkRateLimit: jest.fn().mockReturnValue({ allowed: true, retryAfterMs: 0 }),
-      resetRateLimiter: jest.fn(),
-    }))
-
-    jest.doMock('@/lib/audit', () => ({
-      writeAuditEvent: jest.fn().mockResolvedValue(undefined),
-    }))
+    mockLeadFindByPk.mockResolvedValue({
+      id: 'lead-1',
+      company_name: 'Test Corp',
+    } as any)
 
     const { POST } = await import('@/app/api/v1/internal/onboarding/confirm/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/confirm', {
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/confirm', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(validBody),
-    }) as never
-
+    })
     const response = await POST(request)
     const body = await response.json()
 
@@ -763,57 +586,40 @@ describe('POST /api/v1/internal/onboarding/confirm', () => {
   })
 
   it('returns 500 when onboarding function fails', async () => {
-    jest.doMock('@/lib/auth', () => ({
-      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
-      requireMutationAuth: jest.fn(),
-    }))
+    mockIsSessionError.mockReturnValue(false)
+    mockGetInternalSession.mockResolvedValue(mockSessionUser)
+    mockOnboardOrganization.mockRejectedValue(new Error('Provisioning function error'))
 
-    let queryCallCount = 0
-    jest.doMock('@/lib/sequelize', () => ({
-      sequelize: {
-        query: jest.fn().mockImplementation((sql: string) => {
-          queryCallCount++
+    mockSequelizeQuery.mockImplementation((sql: string) => {
+      if (sql.includes('FROM leads') && !sql.includes('INSERT') && !sql.includes('UPDATE')) {
+        return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1' }])
+      }
+      if (sql.includes('FROM organizations')) {
+        return Promise.resolve([{ id: 'org-1' }])
+      }
+      if (sql.includes('FROM tenant_provisioning_log') && sql.includes('WHERE organization_id')) {
+        return Promise.resolve([])
+      }
+      if (sql.includes('FROM legal_documents')) {
+        return Promise.resolve([{ platform_status: 'signed', storage_key: 'contracts/abc.pdf' }])
+      }
+      if (sql.includes('INSERT INTO tenant_provisioning_log')) {
+        return Promise.resolve([[], {}])
+      }
+      return Promise.resolve([[], {}])
+    })
 
-          if (sql.includes('FROM leads')) {
-            return Promise.resolve([{ id: 'lead-1', converted_organization_id: 'org-1' }])
-          }
-          if (sql.includes('FROM organizations')) {
-            return Promise.resolve([{ id: 'org-1' }])
-          }
-          if (sql.includes('FROM tenant_provisioning_log') && sql.includes('WHERE organization_id')) {
-            return Promise.resolve([])
-          }
-          if (sql.includes('FROM legal_documents')) {
-            return Promise.resolve([{ platform_status: 'signed', storage_key: 'contracts/abc.pdf' }])
-          }
-          if (sql.includes('INSERT INTO tenant_provisioning_log')) {
-            return Promise.resolve([[], {}])
-          }
-          if (sql.includes('niticore_onboard_organization')) {
-            return Promise.reject(new Error('Provisioning function error'))
-          }
-
-          return Promise.resolve([[], {}])
-        }),
-      },
-    }))
-
-    jest.doMock('@/lib/rate-limiter', () => ({
-      checkRateLimit: jest.fn().mockReturnValue({ allowed: true, retryAfterMs: 0 }),
-      resetRateLimiter: jest.fn(),
-    }))
-
-    jest.doMock('@/lib/audit', () => ({
-      writeAuditEvent: jest.fn().mockResolvedValue(undefined),
-    }))
+    mockLeadFindByPk.mockResolvedValue({
+      id: 'lead-1',
+      company_name: 'Test Corp',
+    } as any)
 
     const { POST } = await import('@/app/api/v1/internal/onboarding/confirm/route')
-    const request = new Request('http://localhost/api/v1/internal/onboarding/confirm', {
+    const request = new NextRequest('http://localhost/api/v1/internal/onboarding/confirm', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(validBody),
-    }) as never
-
+    })
     const response = await POST(request)
     const body = await response.json()
 
