@@ -6,6 +6,7 @@ import { FrameworkClassification } from './FrameworkClassification'
 import { FrameworkVersion } from './FrameworkVersion'
 import { FrameworkSection } from './FrameworkSection'
 import { FrameworkClause } from './FrameworkClause'
+import { LegalDocument } from './LegalDocument'
 
 InternalUser.belongsTo(InternalRole, { foreignKey: 'internal_role_id', as: 'role' })
 InternalRole.hasMany(InternalUser, { foreignKey: 'internal_role_id', as: 'users' })
@@ -31,7 +32,9 @@ export {
   FrameworkVersion,
   FrameworkSection,
   FrameworkClause,
+  LegalDocument,
 }
+export { isValidTransition, isValidStatus, type PlatformStatus } from './LegalDocument'
 
 export function initModels(): void {
   InternalUser
@@ -42,4 +45,5 @@ export function initModels(): void {
   FrameworkVersion
   FrameworkSection
   FrameworkClause
+  LegalDocument
 }
