@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { v4 as uuidv4 } from 'uuid'
-import { OrganizationModuleConfig } from '@/lib/models'
+import { sequelize } from '@/lib/sequelize'
 import { authenticateRequest } from '@/lib/auth'
 import { validateModulesBody, ModulesRequestBody } from '@/lib/validation'
 
@@ -37,14 +36,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const organizationId = body.organization_id!
 
   try {
-    for (const mod of body.modules!) {
-      await OrganizationModuleConfig.upsert({
-        id: uuidv4(),
-        organization_id: organizationId,
-        module_id: mod.module_id,
-        enabled: mod.enabled,
-      })
-    }
+    const values = body.modules!.map(mod => [
+      organizationId,
+      mod.module_id,
+      mod.enabled,
+    ])
+
+    await sequelize.query(
+      `INSERT INTO organization_module_config (organization_id, module_id, enabled, created_at, updated_at)
+       VALUES ${values.map(() => '(?, ?, ?, NOW(), NOW())').join(', ')}
+       ON CONFLICT (organization_id, module_id)
+       DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = NOW()`,
+      { replacements: values.flat() },
+    )
   } catch {
     return NextResponse.json(
       { error: 'internal_error', message: 'Failed to save module configuration' },
