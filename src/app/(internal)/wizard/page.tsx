@@ -18,14 +18,21 @@ async function fetchReferenceData(): Promise<ReferenceData> {
 }
 
 async function validateStepOnServer(stepNumber: number, data: any): Promise<Record<string, string>> {
-  const res = await fetch(VALIDATE_STEP_API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ stepNumber, data }),
-  })
-  if (!res.ok) return {}
-  const result = await res.json()
-  return result.errors || {}
+  try {
+    const res = await fetch(VALIDATE_STEP_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stepNumber, data }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      return body.errors || { _form: 'Validation unavailable — try again' }
+    }
+    const result = await res.json()
+    return result.errors || {}
+  } catch {
+    return { _form: 'Validation unavailable — try again' }
+  }
 }
 
 const steps: WizardStep[] = [
@@ -46,7 +53,7 @@ const steps: WizardStep[] = [
 ]
 
 function WizardContent() {
-  const { currentStep, step1, step2, errors, updateStepData, goNext, goBack } = useWizard()
+  const { currentStep, step1, step2, errors, updateStepData } = useWizard()
   const [owners, setOwners] = useState<ReferenceData['owners']>([])
 
   useEffect(() => {

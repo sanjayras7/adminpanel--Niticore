@@ -3,6 +3,8 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react'
 import { WizardState, WizardStep, CustomerProfileData, PlanLifecycleData } from '@/lib/wizard/types'
 
+export { WizardStep }
+
 interface WizardContextType extends WizardState {
   steps: WizardStep[]
   goNext: (serverErrors?: Record<string, string>) => Promise<void>

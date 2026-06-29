@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { WizardStep, useWizard } from '@/lib/wizard/WizardContext'
+import { useWizard } from '@/lib/wizard/WizardContext'
 
 interface WizardShellProps {
   children: React.ReactNode

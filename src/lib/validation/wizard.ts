@@ -1,7 +1,8 @@
-import { CustomerProfileData, PlanLifecycleData, ServerValidationError } from '@/lib/wizard/types'
+import { CustomerProfileData, PlanLifecycleData } from '@/lib/wizard/types'
 
 const SLUG_REGEX = /^[a-z0-9-]+$/
 const DOMAIN_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9-]*(\.[a-zA-Z]{2,})+$/
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function validateCustomerProfile(data: CustomerProfileData): Record<string, string> {
   const errors: Record<string, string> = {}
@@ -32,6 +33,8 @@ export function validateCustomerProfile(data: CustomerProfileData): Record<strin
 
   if (!data.ownerId || data.ownerId.trim().length === 0) {
     errors.ownerId = 'Owner is required'
+  } else if (!UUID_REGEX.test(data.ownerId)) {
+    errors.ownerId = 'Invalid owner ID format'
   }
 
   if (data.notes && data.notes.length > 2000) {

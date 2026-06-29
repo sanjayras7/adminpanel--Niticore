@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { InternalUser } from '@/lib/models'
+import { requirePermission } from '@/lib/auth/requirePermission'
+import type { InternalSessionUser } from '@/lib/auth/session'
 
-export async function GET(request: NextRequest): Promise<NextResponse> {
+async function handler(
+  _request: NextRequest,
+  _ctx: { internalUser: InternalSessionUser },
+): Promise<NextResponse> {
   try {
     const owners = await InternalUser.findAll({
       where: { status: 'active', deleted_at: null },
@@ -25,3 +30,5 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     )
   }
 }
+
+export const GET = requirePermission('onboarding', 'read')(handler)

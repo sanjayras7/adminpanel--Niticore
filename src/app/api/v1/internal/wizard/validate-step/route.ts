@@ -2,8 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { validateStep } from '@/lib/validation/wizard'
 import { InternalUser } from '@/lib/models'
 import { config } from '@/config'
+import { requirePermission } from '@/lib/auth/requirePermission'
+import type { InternalSessionUser } from '@/lib/auth/session'
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
+async function handler(
+  request: NextRequest,
+  _ctx: { internalUser: InternalSessionUser },
+): Promise<NextResponse> {
   try {
     const body = await request.json()
     const { stepNumber, data } = body
@@ -71,6 +76,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
   }
 }
+
+export const POST = requirePermission('onboarding', 'create')(handler)
 
 async function checkSlugExists(slug: string): Promise<boolean> {
   if (config.isTest) {

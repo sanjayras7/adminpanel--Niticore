@@ -72,6 +72,16 @@ describe('validateCustomerProfile', () => {
     expect(errors.ownerId).toBe('Owner is required')
   })
 
+  it('validates ownerId format', () => {
+    const errors = validateCustomerProfile({ ...validData, ownerId: 'not-a-uuid' })
+    expect(errors.ownerId).toBe('Invalid owner ID format')
+  })
+
+  it('allows valid UUID ownerId', () => {
+    const errors = validateCustomerProfile({ ...validData, ownerId: '123e4567-e89b-12d3-a456-426614174000' })
+    expect(errors.ownerId).toBeUndefined()
+  })
+
   it('rejects notes over 2000 characters', () => {
     const errors = validateCustomerProfile({ ...validData, notes: 'a'.repeat(2001) })
     expect(errors.notes).toBe('Notes must be 2000 characters or less')
