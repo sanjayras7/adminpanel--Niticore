@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { InternalUser } from '@/lib/models'
-import { getAuthUser, requireRoles, AuthError } from '@/lib/auth'
-import { validateAndClearImpersonationSession, getActiveImpersonationSession } from '@/lib/middleware/impersonation'
+import { Op } from 'sequelize'
+import { ImpersonationSession } from '@/lib/models/ImpersonationSession'
+import { getAuthUser, AuthError } from '@/lib/auth'
 import { writeAuditEvent } from '@/lib/audit'
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -21,7 +21,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   let session
   try {
-    session = await getActiveImpersonationSession(authUser.id)
+    session = await ImpersonationSession.findOne({
+      where: {
+        actor_internal_user_id: authUser.id,
+        status: 'active',
+      },
+    })
   } catch {
     return NextResponse.json(
       { error: 'internal_error', message: 'Failed to check impersonation status' },
@@ -31,8 +36,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   if (!session) {
     return NextResponse.json(
-      { error: 'NO_ACTIVE_IMPERSONATION', message: 'No active impersonation session' },
-      { status: 400 },
+      { error: 'not_found', message: 'No active impersonation session found' },
+      { status: 404 },
+    )
+  }
+
+  if (authUser.id !== session.actor_internal_user_id && authUser.roleName !== 'Super Admin') {
+    return NextResponse.json(
+      { error: 'forbidden', message: 'Only the session actor or Super Admin may end impersonation' },
+      { status: 403 },
     )
   }
 
@@ -60,7 +72,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   })
 
   return NextResponse.json({
-    status: 'ended',
-    ended_at: session.ended_at.toISOString(),
+    data: {
+      id: session.id,
+      ended_at: session.ended_at.toISOString(),
+    },
   })
 }
