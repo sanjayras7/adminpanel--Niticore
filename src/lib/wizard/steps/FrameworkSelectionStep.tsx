@@ -31,7 +31,7 @@ const STUB_FRAMEWORKS: StubFramework[] = [
     name: 'NIST CSF',
     versions: [{
       version: '2.0',
-      controls: ['GV.OC', 'GV.RM', 'GV.RR', 'GV.SC', 'GV.RP', 'GV.OV', 'GV.DM', 'GV.PO', 'RA.AH', 'RA.RM', 'RA.SC', 'RA.AN', 'RA.CR', 'SB.SC', 'SB.RP', 'SB.SU', 'SB.ST', 'SB.RE', 'SB.RS', 'SB.SD', 'SB.RS', 'AN.CM', 'AN.TW', 'AN.CR', 'AN.IM', 'AN.AN', 'AN.CM', 'DE.CM', 'DE.AE', 'DE.IR', 'DE.MI', 'RS.MA', 'RS.AN', 'RS.CO', 'RS.IM', 'RS.MI', 'RC.RP', 'RC.IM', 'RC.CO'],
+      controls: ['GV.OC', 'GV.RM', 'GV.RR', 'GV.SC', 'GV.RP', 'GV.OV', 'GV.DM', 'GV.PO', 'RA.AH', 'RA.RM', 'RA.SC', 'RA.AN', 'RA.CR', 'SB.SC', 'SB.RP', 'SB.SU', 'SB.ST', 'SB.RE', 'SB.RS', 'SB.SD', 'AN.CM', 'AN.TW', 'AN.CR', 'AN.IM', 'AN.AN', 'DE.CM', 'DE.AE', 'DE.IR', 'DE.MI', 'RS.MA', 'RS.AN', 'RS.CO', 'RS.IM', 'RS.MI', 'RC.RP', 'RC.IM', 'RC.CO'],
     }],
   },
 ]
