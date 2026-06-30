@@ -4,6 +4,7 @@ import { useAuth, AuthProvider } from '@/lib/auth/AuthContext'
 import { SessionClient, type NavItem } from '@/lib/auth/session-client'
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect, useState, useRef } from 'react'
+import { ImpersonationBanner } from '@/components/ImpersonationBanner'
 
 const sessionClient = new SessionClient()
 
@@ -87,6 +88,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div style={styles.layout}>
+      <ImpersonationBanner />
       <header style={styles.header}>
         <div style={styles.headerLeft}>
           <span style={styles.logo}>Niticore</span>
