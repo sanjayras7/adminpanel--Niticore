@@ -92,6 +92,37 @@ export async function getAuthUser(request: NextRequest): Promise<AuthUser> {
   }
 }
 
+export async function getAuthUserFromHeaders(
+  headers: Headers | Record<string, string>,
+): Promise<AuthUser> {
+  const userId = 'get' in headers
+    ? (headers as Headers).get('x-internal-user-id')
+    : (headers as Record<string, string>)['x-internal-user-id']
+
+  if (!userId) {
+    throw new AuthError('Authentication required', 401)
+  }
+
+  const user = await InternalUser.findByPk(userId, {
+    include: [{ model: InternalRole, as: 'role' }],
+  })
+
+  if (!user) {
+    throw new AuthError('User not found', 401)
+  }
+
+  const role = user.get('role') as InternalRole | null
+
+  return {
+    id: user.id,
+    name: user.name,
+    surname: user.surname,
+    email: user.email,
+    internal_role_id: user.internal_role_id,
+    roleName: role?.name ?? null,
+  }
+}
+
 export function requireMutationAuth(authUser: AuthUser): void {
   if (authUser.roleName === 'Read-only Auditor') {
     throw new AuthError('Read-only Auditor cannot perform mutations', 403)
