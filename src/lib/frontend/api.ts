@@ -277,3 +277,163 @@ export async function toggleTenantModule(
   })
   return handleResponse<ToggleModuleResponse>(res)
 }
+
+// ---- Controls ----
+
+export interface ControlItem {
+  id: string
+  control_code: string
+  title: string
+  description: string | null
+  version_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ControlDetail extends ControlItem {
+  versions: VersionSummary[]
+}
+
+export interface ImplementationStepItem {
+  id: string
+  control_version_id: string
+  step_code: string
+  title: string
+  description: string | null
+  category_id: string | null
+  sort_order: number
+}
+
+export interface ControlVersionDetail {
+  id: string
+  control_id: string
+  version_label: string
+  description: string | null
+  status: string
+  effective_date: string | null
+  implementation_steps: ImplementationStepItem[]
+  evidence_types: unknown[]
+  created_at: string
+  updated_at: string
+}
+
+export async function listControls(params?: { search?: string; page?: number; page_size?: number }, userId?: string): Promise<PaginatedResponse<ControlItem>> {
+  const sp = new URLSearchParams()
+  if (params?.search) sp.set('search', params.search)
+  if (params?.page) sp.set('page', String(params.page))
+  if (params?.page_size) sp.set('page_size', String(params.page_size))
+  const qs = sp.toString()
+  const res = await fetch(`${API_BASE}/controls${qs ? '?' + qs : ''}`, { headers: buildHeaders(userId) })
+  return handleResponse<PaginatedResponse<ControlItem>>(res)
+}
+
+export async function getControl(id: string, userId?: string): Promise<SingleResponse<ControlDetail>> {
+  const res = await fetch(`${API_BASE}/controls/${id}`, { headers: buildHeaders(userId) })
+  return handleResponse<SingleResponse<ControlDetail>>(res)
+}
+
+export async function createControl(body: { control_code: string; title: string; description?: string }, userId?: string): Promise<SingleResponse<ControlItem>> {
+  const res = await fetch(`${API_BASE}/controls`, {
+    method: 'POST',
+    headers: buildHeaders(userId),
+    body: JSON.stringify(body),
+  })
+  return handleResponse<SingleResponse<ControlItem>>(res)
+}
+
+export async function updateControl(id: string, body: { control_code?: string; title?: string; description?: string }, userId?: string): Promise<SingleResponse<ControlItem>> {
+  const res = await fetch(`${API_BASE}/controls/${id}`, {
+    method: 'PUT',
+    headers: buildHeaders(userId),
+    body: JSON.stringify(body),
+  })
+  return handleResponse<SingleResponse<ControlItem>>(res)
+}
+
+export async function deleteControl(id: string, userId?: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/controls/${id}`, {
+    method: 'DELETE',
+    headers: buildHeaders(userId),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: 'unknown', message: 'Request failed' }))
+    throw body as ApiError
+  }
+}
+
+export async function listControlVersions(controlId: string, userId?: string): Promise<PaginatedResponse<VersionSummary>> {
+  const res = await fetch(`${API_BASE}/controls/${controlId}/versions`, { headers: buildHeaders(userId) })
+  return handleResponse<PaginatedResponse<VersionSummary>>(res)
+}
+
+export async function createControlVersion(controlId: string, body: { version_label: string; description?: string; effective_date?: string }, userId?: string): Promise<SingleResponse<VersionSummary>> {
+  const res = await fetch(`${API_BASE}/controls/${controlId}/versions`, {
+    method: 'POST',
+    headers: buildHeaders(userId),
+    body: JSON.stringify(body),
+  })
+  return handleResponse<SingleResponse<VersionSummary>>(res)
+}
+
+export async function getControlVersion(controlId: string, versionId: string, userId?: string): Promise<SingleResponse<ControlVersionDetail>> {
+  const res = await fetch(`${API_BASE}/controls/${controlId}/versions/${versionId}`, { headers: buildHeaders(userId) })
+  return handleResponse<SingleResponse<ControlVersionDetail>>(res)
+}
+
+export async function updateControlVersion(controlId: string, versionId: string, body: { version_label?: string; description?: string; effective_date?: string | null }, userId?: string): Promise<SingleResponse<Record<string, unknown>>> {
+  const res = await fetch(`${API_BASE}/controls/${controlId}/versions/${versionId}`, {
+    method: 'PUT',
+    headers: buildHeaders(userId),
+    body: JSON.stringify(body),
+  })
+  return handleResponse<SingleResponse<Record<string, unknown>>>(res)
+}
+
+export async function deleteControlVersion(controlId: string, versionId: string, userId?: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/controls/${controlId}/versions/${versionId}`, {
+    method: 'DELETE',
+    headers: buildHeaders(userId),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: 'unknown', message: 'Request failed' }))
+    throw body as ApiError
+  }
+}
+
+export async function publishControlVersion(controlId: string, versionId: string, userId?: string): Promise<SingleResponse<Record<string, unknown>>> {
+  const res = await fetch(`${API_BASE}/controls/${controlId}/versions/${versionId}/publish`, {
+    method: 'POST',
+    headers: buildHeaders(userId),
+    body: JSON.stringify({}),
+  })
+  return handleResponse<SingleResponse<Record<string, unknown>>>(res)
+}
+
+export async function createImplementationStep(controlId: string, versionId: string, body: { step_code: string; title: string; description?: string; category_id?: string; sort_order?: number }, userId?: string): Promise<SingleResponse<ImplementationStepItem>> {
+  const res = await fetch(`${API_BASE}/controls/${controlId}/versions/${versionId}/implementation-steps`, {
+    method: 'POST',
+    headers: buildHeaders(userId),
+    body: JSON.stringify(body),
+  })
+  return handleResponse<SingleResponse<ImplementationStepItem>>(res)
+}
+
+export async function updateImplementationStep(controlId: string, versionId: string, stepId: string, body: { step_code?: string; title?: string; description?: string; category_id?: string | null; sort_order?: number }, userId?: string): Promise<SingleResponse<ImplementationStepItem>> {
+  const res = await fetch(`${API_BASE}/controls/${controlId}/versions/${versionId}/implementation-steps/${stepId}`, {
+    method: 'PUT',
+    headers: buildHeaders(userId),
+    body: JSON.stringify(body),
+  })
+  return handleResponse<SingleResponse<ImplementationStepItem>>(res)
+}
+
+export async function deleteImplementationStep(controlId: string, versionId: string, stepId: string, userId?: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/controls/${controlId}/versions/${versionId}/implementation-steps/${stepId}`, {
+    method: 'DELETE',
+    headers: buildHeaders(userId),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: 'unknown', message: 'Request failed' }))
+    throw body as ApiError
+  }
+}
