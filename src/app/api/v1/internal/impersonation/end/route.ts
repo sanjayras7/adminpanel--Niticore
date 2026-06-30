@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { InternalUser } from '@/lib/models'
-import { getAuthUser, requireRoles, AuthError } from '@/lib/auth'
-import { validateAndClearImpersonationSession, getActiveImpersonationSession } from '@/lib/middleware/impersonation'
-import { writeAuditEvent } from '@/lib/audit'
+import { Op } from 'sequelize'
+import { ImpersonationSession } from '@/lib/models/ImpersonationSession'
+import { getAuthUser, AuthError } from '@/lib/auth'
+import { logAuditEvent } from '@/lib/audit'
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   let authUser
@@ -16,12 +16,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
-  const userAgent = request.headers.get('user-agent') || undefined
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null
+  const userAgent = request.headers.get('user-agent') || null
 
   let session
   try {
-    session = await getActiveImpersonationSession(authUser.id)
+    session = await ImpersonationSession.findOne({
+      where: {
+        actor_internal_user_id: authUser.id,
+        status: 'active',
+      },
+    })
   } catch {
     return NextResponse.json(
       { error: 'internal_error', message: 'Failed to check impersonation status' },
@@ -31,8 +36,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   if (!session) {
     return NextResponse.json(
-      { error: 'NO_ACTIVE_IMPERSONATION', message: 'No active impersonation session' },
-      { status: 400 },
+      { error: 'not_found', message: 'No active impersonation session found' },
+      { status: 404 },
+    )
+  }
+
+  if (authUser.id !== session.actor_internal_user_id && authUser.roleName !== 'Super Admin') {
+    return NextResponse.json(
+      { error: 'forbidden', message: 'Only the session actor or Super Admin may end impersonation' },
+      { status: 403 },
     )
   }
 
@@ -47,20 +59,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
   }
 
-  writeAuditEvent({
-    actor_internal_user_id: authUser.id,
-    actor_role: authUser.roleName,
+  await logAuditEvent({
+    actorInternalUserId: authUser.id,
+    actorRole: authUser.roleName ?? 'UNKNOWN',
     action: 'impersonation.end',
-    target_type: 'impersonation_session',
-    target_id: session.id,
-    organization_id: session.organization_id,
+    targetType: 'impersonation_session',
+    targetId: session.id,
+    organizationId: session.organization_id,
     reason: null,
-    ip_address: ip,
-    user_agent: userAgent,
+    ipAddress: ip,
+    userAgent: userAgent,
   })
 
   return NextResponse.json({
-    status: 'ended',
-    ended_at: session.ended_at.toISOString(),
+    data: {
+      id: session.id,
+      ended_at: session.ended_at.toISOString(),
+    },
   })
 }

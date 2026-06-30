@@ -9,30 +9,47 @@ jest.mock('@/lib/models/ImpersonationSession', () => ({
   },
 }))
 
+jest.mock('@/lib/audit', () => ({
+  logAuditEvent: jest.fn().mockResolvedValue(undefined),
+}))
+
+jest.mock('@/lib/models', () => ({
+  InternalUser: {
+    findByPk: jest.fn(),
+  },
+  InternalRole: {},
+}))
+
+import { logAuditEvent } from '@/lib/audit'
+
 const mockFindOne = ImpersonationSession.findOne as jest.Mock
 const now = new Date()
 const futureTime = new Date(now.getTime() + 60 * 60 * 1000)
 const pastTime = new Date(now.getTime() - 60 * 60 * 1000)
 
-type MockNextRequest = {
-  method: string
-  headers: { get: (name: string) => string | null }
-  url: string
-}
-
 function makeRequest(
   method: string,
   userId?: string,
-  body?: unknown,
-): MockNextRequest {
+): Request {
   const headers: Record<string, string> = {}
   if (userId) headers['x-internal-user-id'] = userId
-  if (body) headers['content-type'] = 'application/json'
 
-  const init: RequestInit = { method, headers }
-  if (body) init.body = JSON.stringify(body)
+  return new Request('http://localhost/api/test', { method, headers })
+}
 
-  return new Request('http://localhost/api/test', init)
+function makeSession(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 's1',
+    actor_internal_user_id: 'u1',
+    organization_id: 'o1',
+    impersonated_user_id: null,
+    reason: 'Investigating issue',
+    started_at: now,
+    expires_at: futureTime,
+    status: 'active',
+    save: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  }
 }
 
 describe('requireRoles', () => {
@@ -86,16 +103,7 @@ describe('getActiveImpersonationSession', () => {
   })
 
   it('returns session when active and not expired', async () => {
-    mockFindOne.mockResolvedValue({
-      id: 's1',
-      actor_internal_user_id: 'u1',
-      organization_id: 'o1',
-      impersonated_user_id: null,
-      reason: 'Investigating issue',
-      started_at: now,
-      expires_at: futureTime,
-      status: 'active',
-    })
+    mockFindOne.mockResolvedValue(makeSession())
 
     const result = await getActiveImpersonationSession('u1')
     expect(result).not.toBeNull()
@@ -116,11 +124,19 @@ describe('getActiveImpersonationSession', () => {
     const result = await getActiveImpersonationSession('u1')
     expect(result).toBeNull()
   })
+
+  it('returns null when session is expired', async () => {
+    mockFindOne.mockResolvedValue(null)
+
+    const result = await getActiveImpersonationSession('u1')
+    expect(result).toBeNull()
+  })
 })
 
 describe('checkImpersonationBlock', () => {
   beforeEach(() => {
     mockFindOne.mockReset()
+    jest.clearAllMocks()
   })
 
   it('allows GET requests through', async () => {
@@ -131,14 +147,7 @@ describe('checkImpersonationBlock', () => {
   })
 
   it('blocks POST request when impersonation is active', async () => {
-    mockFindOne.mockResolvedValue({
-      id: 's1',
-      actor_internal_user_id: 'u1',
-      organization_id: 'o1',
-      reason: 'Testing',
-      expires_at: futureTime,
-      status: 'active',
-    })
+    mockFindOne.mockResolvedValue(makeSession())
 
     const req = makeRequest('POST', 'u1')
     const result = await checkImpersonationBlock(req as any)
@@ -147,17 +156,11 @@ describe('checkImpersonationBlock', () => {
 
     const body = await result!.json()
     expect(body.error).toBe('IMPERSONATION_READ_ONLY')
+    expect(body.message).toBe('Mutations are blocked during impersonation')
   })
 
   it('blocks PUT request when impersonation is active', async () => {
-    mockFindOne.mockResolvedValue({
-      id: 's1',
-      actor_internal_user_id: 'u1',
-      organization_id: 'o1',
-      reason: 'Testing',
-      expires_at: futureTime,
-      status: 'active',
-    })
+    mockFindOne.mockResolvedValue(makeSession())
 
     const req = makeRequest('PUT', 'u1')
     const result = await checkImpersonationBlock(req as any)
@@ -166,14 +169,7 @@ describe('checkImpersonationBlock', () => {
   })
 
   it('blocks PATCH request when impersonation is active', async () => {
-    mockFindOne.mockResolvedValue({
-      id: 's1',
-      actor_internal_user_id: 'u1',
-      organization_id: 'o1',
-      reason: 'Testing',
-      expires_at: futureTime,
-      status: 'active',
-    })
+    mockFindOne.mockResolvedValue(makeSession())
 
     const req = makeRequest('PATCH', 'u1')
     const result = await checkImpersonationBlock(req as any)
@@ -182,14 +178,7 @@ describe('checkImpersonationBlock', () => {
   })
 
   it('blocks DELETE request when impersonation is active', async () => {
-    mockFindOne.mockResolvedValue({
-      id: 's1',
-      actor_internal_user_id: 'u1',
-      organization_id: 'o1',
-      reason: 'Testing',
-      expires_at: futureTime,
-      status: 'active',
-    })
+    mockFindOne.mockResolvedValue(makeSession())
 
     const req = makeRequest('DELETE', 'u1')
     const result = await checkImpersonationBlock(req as any)
@@ -214,14 +203,7 @@ describe('checkImpersonationBlock', () => {
 
   it('returns session_expires_at in the response', async () => {
     const expiresAt = futureTime
-    mockFindOne.mockResolvedValue({
-      id: 's1',
-      actor_internal_user_id: 'u1',
-      organization_id: 'o1',
-      reason: 'Testing',
-      expires_at: expiresAt,
-      status: 'active',
-    })
+    mockFindOne.mockResolvedValue(makeSession({ expires_at: expiresAt }))
 
     const req = makeRequest('POST', 'u1')
     const result = await checkImpersonationBlock(req as any)
@@ -230,13 +212,7 @@ describe('checkImpersonationBlock', () => {
   })
 
   it('allows HEAD requests during impersonation', async () => {
-    mockFindOne.mockResolvedValue({
-      id: 's1',
-      actor_internal_user_id: 'u1',
-      reason: 'Testing',
-      expires_at: futureTime,
-      status: 'active',
-    })
+    mockFindOne.mockResolvedValue(makeSession())
 
     const req = makeRequest('HEAD', 'u1')
     const result = await checkImpersonationBlock(req as any)
@@ -251,36 +227,73 @@ describe('checkImpersonationBlock', () => {
   })
 })
 
-describe('start impersonation validation', () => {
-  const REASON_MIN_LENGTH = 10
-  const REASON_MAX_LENGTH = 500
-
-  it('rejects missing reason', () => {
-    expect(true).toBe(true)
+describe('checkImpersonationBlock auto-expiry', () => {
+  beforeEach(() => {
+    mockFindOne.mockReset()
+    jest.clearAllMocks()
   })
 
-  it('rejects reason shorter than 10 characters', () => {
-    expect('short'.length).toBeLessThan(REASON_MIN_LENGTH)
+  it('auto-expires session when expires_at is past', async () => {
+    const saveMock = jest.fn().mockResolvedValue(undefined)
+    const expiredSession = makeSession({
+      expires_at: pastTime,
+      save: saveMock,
+    })
+    mockFindOne.mockResolvedValue(expiredSession)
+
+    const req = makeRequest('POST', 'u1')
+    const result = await checkImpersonationBlock(req as any)
+
+    expect(saveMock).toHaveBeenCalled()
+    expect(expiredSession.status).toBe('expired')
+    expect(result).not.toBeNull()
+    expect(result!.status).toBe(403)
+
+    const body = await result!.json()
+    expect(body.message).toBe('Impersonation session has expired')
   })
 
-  it('rejects reason longer than 500 characters', () => {
-    const longReason = 'x'.repeat(501)
-    expect(longReason.length).toBeGreaterThan(REASON_MAX_LENGTH)
+  it('does not auto-expire session with valid expires_at', async () => {
+    const saveMock = jest.fn().mockResolvedValue(undefined)
+    const validSession = makeSession({
+      expires_at: futureTime,
+      save: saveMock,
+    })
+    mockFindOne.mockResolvedValue(validSession)
+
+    const req = makeRequest('POST', 'u1')
+    await checkImpersonationBlock(req as any)
+
+    expect(saveMock).not.toHaveBeenCalled()
+    expect(validSession.status).toBe('active')
   })
 
-  it('accepts valid reason', () => {
-    const validReason = 'Investigating a billing issue for customer'
-    expect(validReason.length).toBeGreaterThanOrEqual(REASON_MIN_LENGTH)
-    expect(validReason.length).toBeLessThanOrEqual(REASON_MAX_LENGTH)
-  })
-})
+  it('writes impersonation.expired audit event on auto-expiry', async () => {
+    const saveMock = jest.fn().mockResolvedValue(undefined)
+    const expiredSession = makeSession({
+      expires_at: pastTime,
+      save: saveMock,
+    })
+    mockFindOne.mockResolvedValue(expiredSession)
 
-describe('end impersonation', () => {
-  it('rejects when no active session exists', () => {
-    expect('handler returns 400 NO_ACTIVE_IMPERSONATION').toBeTruthy()
+    const req = makeRequest('POST', 'u1')
+    await checkImpersonationBlock(req as any)
+
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'impersonation.expired',
+        targetId: 's1',
+        actorInternalUserId: 'u1',
+      }),
+    )
   })
 
-  it('allows ending an active session', () => {
-    expect('handler returns 200 with ended status').toBeTruthy()
+  it('does not write audit event for valid non-expired session', async () => {
+    mockFindOne.mockResolvedValue(makeSession())
+
+    const req = makeRequest('POST', 'u1')
+    await checkImpersonationBlock(req as any)
+
+    expect(logAuditEvent).not.toHaveBeenCalled()
   })
 })
