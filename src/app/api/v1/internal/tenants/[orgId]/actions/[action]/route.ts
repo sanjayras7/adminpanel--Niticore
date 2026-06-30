@@ -50,9 +50,10 @@ async function getCustomerUserById(userId: string): Promise<Record<string, unkno
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { organizationId: string; action: string } },
+  { params }: { params: { orgId: string; action: string } },
 ): Promise<NextResponse> {
-  const { organizationId, action } = params
+  const organizationId = params.orgId
+  const { action } = params
 
   if (!UUID_REGEX.test(organizationId)) {
     return NextResponse.json(

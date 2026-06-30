@@ -19,7 +19,7 @@ function formatLegalDoc(doc: LegalDocument | null) {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: { orgId: string } },
 ): Promise<NextResponse> {
   let authUser
   try {
@@ -32,7 +32,7 @@ export async function GET(
     return NextResponse.json({ error: 'forbidden', message: 'Insufficient permissions to view tenant summary' }, { status: 403 })
   }
 
-  const { id } = params
+  const id = params.orgId
 
   try {
     const org = await Organization.findByPk(id)

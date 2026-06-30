@@ -9,9 +9,9 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: { orgId: string } },
 ): Promise<NextResponse> {
-  if (!UUID_REGEX.test(params.id)) {
+  if (!UUID_REGEX.test(params.orgId)) {
     return NextResponse.json(
       { error: 'invalid_request', message: 'Tenant ID must be a valid UUID' },
       { status: 400 },
@@ -38,7 +38,7 @@ export async function POST(
   try {
     const [result] = await sequelize.query(
       'SELECT * FROM niticore_reprovision_tenant(:tenant_id)',
-      { replacements: { tenant_id: params.id } },
+      { replacements: { tenant_id: params.orgId } },
     )
 
     await writeAuditEvent({
@@ -46,8 +46,8 @@ export async function POST(
       actor_role: authUser.roleName,
       action: 'tenant.reprovision',
       target_type: 'tenant',
-      target_id: params.id,
-      organization_id: params.id,
+      target_id: params.orgId,
+      organization_id: params.orgId,
       after_values: { outcome: 'success' },
       ip_address: ip,
       user_agent: userAgent,
@@ -62,8 +62,8 @@ export async function POST(
       actor_role: authUser.roleName,
       action: 'tenant.reprovision',
       target_type: 'tenant',
-      target_id: params.id,
-      organization_id: params.id,
+      target_id: params.orgId,
+      organization_id: params.orgId,
       after_values: { outcome: 'failed', error: errorMessage },
       ip_address: ip,
       user_agent: userAgent,

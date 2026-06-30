@@ -11,7 +11,7 @@ function isAuthorizedRole(roleName: string | null): boolean {
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { organizationId: string; configId: string } },
+  { params }: { params: { orgId: string; configId: string } },
 ): Promise<NextResponse> {
   let authUser
   try {
@@ -48,7 +48,7 @@ export async function PATCH(
     const [orgRows] = await sequelize.query<{ id: string }[]>(
       `SELECT id FROM organizations WHERE id = :organizationId AND status = 'active'`,
       {
-        replacements: { organizationId: params.organizationId },
+        replacements: { organizationId: params.orgId },
         type: 'SELECT' as never,
       },
     )
@@ -63,7 +63,7 @@ export async function PATCH(
     const [configRows] = await sequelize.query<Record<string, unknown>[]>(
       `SELECT * FROM organization_module_config WHERE id = :configId AND organization_id = :organizationId`,
       {
-        replacements: { configId: params.configId, organizationId: params.organizationId },
+        replacements: { configId: params.configId, organizationId: params.orgId },
         type: 'SELECT' as never,
       },
     )
@@ -84,7 +84,7 @@ export async function PATCH(
         replacements: {
           enabled: body.enabled,
           configId: params.configId,
-          organizationId: params.organizationId,
+          organizationId: params.orgId,
         },
         type: 'UPDATE' as never,
       },
@@ -98,7 +98,7 @@ export async function PATCH(
       action: 'tenant_module_toggle',
       target_type: 'organization_module_config',
       target_id: params.configId,
-      organization_id: params.organizationId,
+      organization_id: params.orgId,
       before_values: beforeValues as unknown as Record<string, unknown>,
       after_values: afterValues as unknown as Record<string, unknown>,
       reason: body.reason ?? null,

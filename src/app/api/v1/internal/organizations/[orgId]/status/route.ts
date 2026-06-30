@@ -21,7 +21,7 @@ function isValidTransition(from: TenantStatus, to: TenantStatus): boolean {
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: { orgId: string } },
 ): Promise<NextResponse> {
   let authUser
   try {
@@ -58,7 +58,7 @@ export async function PATCH(
   const txn = await sequelize.transaction()
 
   try {
-    const organization = await Organization.findByPk(params.id, {
+    const organization = await Organization.findByPk(params.orgId, {
       lock: txn.LOCK.UPDATE,
       transaction: txn,
     })
