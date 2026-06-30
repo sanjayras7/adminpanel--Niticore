@@ -168,7 +168,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
   }
 
-  writeAuditEvent({
+  await writeAuditEvent({
     actor_internal_user_id: authUser.id,
     actor_role: authUser.roleName,
     action: 'impersonation.start',

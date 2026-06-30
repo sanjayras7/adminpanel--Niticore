@@ -45,7 +45,14 @@ export async function middleware(request: NextRequest) {
       }
     }
   } catch {
-    console.error('[IMPERSONATION-MW] Failed to check impersonation status')
+    console.error('[IMPERSONATION-MW] Failed to check impersonation status - blocking mutation to be safe')
+    return NextResponse.json(
+      {
+        error: 'IMPERSONATION_READ_ONLY',
+        message: 'Mutations are blocked — unable to verify impersonation status',
+      },
+      { status: 403 },
+    )
   }
 
   return NextResponse.next()
