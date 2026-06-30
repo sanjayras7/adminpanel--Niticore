@@ -1,6 +1,7 @@
 import { InternalUser } from './InternalUser'
 import { MagicLink } from './MagicLink'
 import { InternalRole } from './InternalRole'
+import { ImpersonationSession } from './ImpersonationSession'
 import { Framework } from './Framework'
 import { FrameworkClassification } from './FrameworkClassification'
 import { FrameworkVersion } from './FrameworkVersion'
@@ -26,6 +27,7 @@ export {
   InternalUser,
   MagicLink,
   InternalRole,
+  ImpersonationSession,
   Framework,
   FrameworkClassification,
   FrameworkVersion,
@@ -37,6 +39,7 @@ export function initModels(): void {
   InternalUser
   MagicLink
   InternalRole
+  ImpersonationSession
   Framework
   FrameworkClassification
   FrameworkVersion
