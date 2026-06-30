@@ -87,8 +87,8 @@ export default function ControlDetailPage() {
       ])
       setFwMappings(fwRes.data)
       setRiskMappings(riskRes.data)
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.warn('Failed to load mappings:', err)
     }
   }, [id])
 
@@ -100,34 +100,33 @@ export default function ControlDetailPage() {
       if (!res.ok) return []
       const body = await res.json()
       return body.data || []
-    } catch {
+    } catch (err) {
+      console.warn('Failed to fetch versions:', err)
       return []
     }
-  }, [])
+  }, [user.id])
 
   const loadClauseData = useCallback(async () => {
     setLoadingClauses(true)
     try {
-      const fwRes = await listFrameworks({ page_size: 100 }, user.id)
+      const fwRes = await listFrameworks({ page_size: 200 }, user.id)
       const map = new Map<string, ClauseInfo>()
 
-      for (const fw of fwRes.data) {
+      await Promise.all(fwRes.data.map(async (fw) => {
         const versions = await fetchVersions(fw.id)
-
-        for (const ver of versions) {
+        await Promise.all(versions.map(async (ver) => {
           try {
             const verRes = await getVersion(fw.id, ver.id, user.id)
-            const versionData = verRes.data
-            flattenClauses(versionData.sections, fw.name, versionData.version_label, map)
-          } catch {
-            // skip versions we can't load
+            flattenClauses(verRes.data.sections, fw.name, verRes.data.version_label, map)
+          } catch (err) {
+            console.warn(`Failed to load version ${ver.id} for framework ${fw.id}:`, err)
           }
-        }
-      }
+        }))
+      }))
 
       setClauseMap(map)
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.warn('Failed to load clause data:', err)
     } finally {
       setLoadingClauses(false)
     }
@@ -135,80 +134,41 @@ export default function ControlDetailPage() {
 
   const loadFrameworksForPicker = useCallback(async () => {
     try {
-      const fwRes = await listFrameworks({ page_size: 100 }, user.id)
+      const fwRes = await listFrameworks({ page_size: 200 }, user.id)
       const options: FrameworkOption[] = []
 
-      for (const fw of fwRes.data) {
+      await Promise.all(fwRes.data.map(async (fw) => {
         const versions = await fetchVersions(fw.id)
         const versionOptions: VersionOption[] = []
 
-        for (const ver of versions) {
+        await Promise.all(versions.map(async (ver) => {
           try {
             const verRes = await getVersion(fw.id, ver.id, user.id)
-            const versionData = verRes.data
-            const clauses = flattenClauseOptions(versionData.sections)
+            const clauses = flattenClauseOptions(verRes.data.sections)
             if (clauses.length > 0) {
-              versionOptions.push({ id: ver.id, version_label: versionData.version_label, clauses })
+              versionOptions.push({ id: ver.id, version_label: verRes.data.version_label, clauses })
             }
-          } catch {
-            // skip
+          } catch (err) {
+            console.warn(`Failed to load version ${ver.id} for framework ${fw.id}:`, err)
           }
-        }
+        }))
 
         if (versionOptions.length > 0) {
           options.push({ id: fw.id, name: fw.name, versions: versionOptions })
         }
-      }
+      }))
 
       setFrameworks(options)
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.warn('Failed to load frameworks for picker:', err)
     }
-  }, [fetchVersions])
+  }, [fetchVersions, user.id])
 
   useEffect(() => {
     load()
     loadMappings()
     loadClauseData()
   }, [load, loadMappings, loadClauseData])
-
-  const loadFrameworksForPicker = useCallback(async () => {
-    try {
-      const fwRes = await listFrameworks({ page_size: 100 }, user.id)
-      const options: FrameworkOption[] = []
-
-      for (const fw of fwRes.data) {
-        const verListRes = await fetch(`/api/v1/internal/frameworks/${fw.id}/versions`, {
-          headers: { 'Content-Type': 'application/json', 'x-internal-user-id': user.id },
-        })
-        if (!verListRes.ok) continue
-        const verListBody = await verListRes.json()
-        const versions = verListBody.data || []
-        const versionOptions: VersionOption[] = []
-
-        for (const ver of versions) {
-          try {
-            const verRes = await getVersion(fw.id, ver.id, user.id)
-            const versionData = verRes.data
-            const clauses = flattenClauseOptions(versionData.sections)
-            if (clauses.length > 0) {
-              versionOptions.push({ id: ver.id, version_label: versionData.version_label, clauses })
-            }
-          } catch {
-            // skip
-          }
-        }
-
-        if (versionOptions.length > 0) {
-          options.push({ id: fw.id, name: fw.name, versions: versionOptions })
-        }
-      }
-
-      setFrameworks(options)
-    } catch {
-      // silently fail
-    }
-  }, [])
 
   function flattenClauses(
     sections: SectionNode[],
@@ -270,12 +230,19 @@ export default function ControlDetailPage() {
     }
   }
 
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
   const handleAddRiskMapping = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!riskId.trim()) return
+    const trimmed = riskId.trim()
+    if (!trimmed) return
+    if (!UUID_RE.test(trimmed)) {
+      alert('Please enter a valid UUID (e.g. 550e8400-e29b-41d4-a716-446655440000)')
+      return
+    }
     setAdding(true)
     try {
-      await createControlRiskMapping({ control_id: id, risk_id: riskId.trim() }, user.id)
+      await createControlRiskMapping({ control_id: id, risk_id: trimmed }, user.id)
       setShowAddRisk(false)
       setRiskId('')
       await loadMappings()
