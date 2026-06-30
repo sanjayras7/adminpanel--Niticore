@@ -5,10 +5,19 @@ import { writeAuditEvent } from '@/lib/audit'
 
 const ALLOWED_ROLES = ['Super Admin', 'Engineering']
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
+  if (!UUID_REGEX.test(params.id)) {
+    return NextResponse.json(
+      { error: 'invalid_request', message: 'Tenant ID must be a valid UUID' },
+      { status: 400 },
+    )
+  }
+
   let authUser
   try {
     authUser = await getAuthUser(request)
@@ -38,6 +47,7 @@ export async function POST(
       action: 'tenant.reprovision',
       target_type: 'tenant',
       target_id: params.id,
+      organization_id: params.id,
       after_values: { outcome: 'success' },
       ip_address: ip,
       user_agent: userAgent,
@@ -53,12 +63,22 @@ export async function POST(
       action: 'tenant.reprovision',
       target_type: 'tenant',
       target_id: params.id,
+      organization_id: params.id,
       after_values: { outcome: 'failed', error: errorMessage },
       ip_address: ip,
       user_agent: userAgent,
     })
 
     console.error('[PROVISIONING] Reprovision error:', err)
+
+    const lowerMsg = errorMessage.toLowerCase()
+    if (lowerMsg.includes('not found')) {
+      return NextResponse.json({ error: 'not_found', message: errorMessage }, { status: 404 })
+    }
+    if (lowerMsg.includes('not in a failed') || lowerMsg.includes('invalid state') || lowerMsg.includes('cannot reprovision')) {
+      return NextResponse.json({ error: 'conflict', message: errorMessage }, { status: 409 })
+    }
+
     return NextResponse.json({ error: 'reprovision_failed', message: errorMessage }, { status: 500 })
   }
 }
