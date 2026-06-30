@@ -1,52 +1,200 @@
 'use client'
 
-import type { EnabledModule } from '@/lib/queries/tenant'
+import { useState, useCallback } from 'react'
+import { toggleTenantModule, type TenantModule } from '@/lib/frontend/api'
 
 interface Props {
-  modules: EnabledModule[]
+  organizationId: string
+  modules: TenantModule[]
+  canToggle: boolean
+  userId?: string | null
   error?: string
 }
 
-export default function EnabledModulesCard({ modules, error }: Props) {
+function Switch({
+  checked,
+  disabled,
+  loading,
+  onChange,
+}: {
+  checked: boolean
+  disabled: boolean
+  loading: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled || loading}
+      onClick={() => onChange(!checked)}
+      style={{
+        position: 'relative',
+        display: 'inline-flex',
+        width: '36px',
+        height: '20px',
+        borderRadius: '10px',
+        border: 'none',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        background: checked ? '#10b981' : '#d1d5db',
+        opacity: loading ? 0.6 : 1,
+        transition: 'background 0.2s',
+        flexShrink: 0,
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          top: '2px',
+          left: checked ? '18px' : '2px',
+          width: '16px',
+          height: '16px',
+          borderRadius: '50%',
+          background: '#fff',
+          transition: 'left 0.2s',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
+        }}
+      />
+    </button>
+  )
+}
+
+export default function EnabledModulesCard({
+  organizationId,
+  modules: initialModules,
+  canToggle,
+  userId,
+  error: initialError,
+}: Props) {
+  const [modules, setModules] = useState<TenantModule[]>(initialModules)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [toggleError, setToggleError] = useState<string | null>(null)
+
+  const handleToggle = useCallback(
+    async (configId: string, currentEnabled: boolean) => {
+      setTogglingId(configId)
+      setToggleError(null)
+
+      const prevModules = modules.map((m) => ({
+        ...m,
+        subModules: m.subModules.map((sm) => ({ ...sm })),
+      }))
+
+      setModules((prev) =>
+        prev.map((m) => ({
+          ...m,
+          subModules: m.subModules.map((sm) =>
+            sm.configId === configId ? { ...sm, enabled: !currentEnabled } : sm,
+          ),
+        })),
+      )
+
+      try {
+        await toggleTenantModule(organizationId, configId, !currentEnabled, userId)
+      } catch {
+        setModules(prevModules)
+        setToggleError('Failed to update module. Please try again.')
+      } finally {
+        setTogglingId(null)
+      }
+    },
+    [organizationId, userId, modules],
+  )
+
+  if (initialError) {
+    return (
+      <div className="rounded-lg border border-gray-200 bg-white p-6">
+        <h2 style={{ fontSize: '15px', fontWeight: 600, color: '#374151', marginBottom: '12px' }}>
+          Enabled Modules
+        </h2>
+        <div style={{ padding: '12px', background: '#fef2f2', borderRadius: '6px', color: '#dc2626', fontSize: '13px' }}>
+          {initialError}
+        </div>
+      </div>
+    )
+  }
+
+  if (modules.length === 0) {
+    return (
+      <div className="rounded-lg border border-gray-200 bg-white p-6">
+        <h2 style={{ fontSize: '15px', fontWeight: 600, color: '#374151', marginBottom: '12px' }}>
+          Enabled Modules
+        </h2>
+        <p style={{ fontSize: '13px', color: '#9ca3af' }}>No modules configured</p>
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-6">
-      <h2 className="mb-4 text-lg font-semibold text-gray-900">Enabled Modules</h2>
-      {error ? (
-        <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
-      ) : modules.length === 0 ? (
-        <p className="text-sm text-gray-500">No modules configured</p>
-      ) : (
-        <div className="space-y-4">
-          {modules.map((mod) => (
-            <div key={mod.moduleId}>
-              <h3 className="text-sm font-medium text-gray-900">{mod.moduleName}</h3>
-              <div className="ml-4 mt-1 flex flex-wrap gap-2">
-                {mod.subModules.map((sm) => (
-                  <span
-                    key={sm.id}
-                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                      sm.enabled
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-gray-50 text-gray-400'
-                    }`}
-                  >
-                    {sm.name}
-                    {sm.enabled ? (
-                      <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    ) : (
-                      <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <h2 style={{ fontSize: '15px', fontWeight: 600, color: '#374151' }}>
+          Enabled Modules
+        </h2>
+        {!canToggle && (
+          <span style={{ fontSize: '11px', color: '#9ca3af' }}>Read-only</span>
+        )}
+      </div>
+
+      {toggleError && (
+        <div style={{ padding: '8px 12px', background: '#fef2f2', borderRadius: '6px', color: '#dc2626', fontSize: '12px', marginBottom: '12px' }}>
+          {toggleError}
         </div>
       )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {modules.map((mod) => (
+          <div key={mod.moduleId}>
+            <div style={{ fontSize: '14px', fontWeight: 500, color: '#111827', marginBottom: '8px' }}>
+              {mod.moduleName}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {mod.subModules.map((sm) => (
+                <div
+                  key={sm.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    background: sm.enabled ? '#f0fdf4' : '#f9fafb',
+                    transition: 'background 0.15s',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                    <span
+                      style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        background: sm.enabled ? '#10b981' : '#d1d5db',
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span style={{ fontSize: '13px', color: '#374151' }}>{sm.name}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                    {sm.configId ? (
+                      <Switch
+                        checked={sm.enabled}
+                        disabled={!canToggle}
+                        loading={togglingId === sm.configId}
+                        onChange={() => handleToggle(sm.configId!, sm.enabled)}
+                      />
+                    ) : (
+                      <span style={{ fontSize: '11px', color: '#9ca3af', fontStyle: 'italic' }}>
+                        Not configured
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

@@ -247,109 +247,33 @@ export async function getWizardPrefill(leadId: string, userId?: string): Promise
   return body.data
 }
 
-export interface ControlItem {
+export interface TenantSubModule {
   id: string
-  control_code: string
-  title: string
-  description: string | null
-  version_count: number
-  created_at: string
-  updated_at: string
+  name: string
+  enabled: boolean
+  configId: string | null
 }
 
-export interface ControlDetail extends ControlItem {
-  versions: VersionSummary[]
+export interface TenantModule {
+  moduleId: string
+  moduleName: string
+  subModules: TenantSubModule[]
 }
 
-export async function listControls(params?: { search?: string; page?: number; page_size?: number }, userId?: string): Promise<PaginatedResponse<ControlItem>> {
-  const sp = new URLSearchParams()
-  if (params?.search) sp.set('search', params.search)
-  if (params?.page) sp.set('page', String(params.page))
-  if (params?.page_size) sp.set('page_size', String(params.page_size))
-  const qs = sp.toString()
-  const res = await fetch(`${API_BASE}/controls${qs ? '?' + qs : ''}`, { headers: buildHeaders(userId) })
-  return handleResponse<PaginatedResponse<ControlItem>>(res)
+export interface ToggleModuleResponse {
+  data: Record<string, unknown>
 }
 
-export async function getControl(id: string, userId?: string): Promise<SingleResponse<ControlDetail>> {
-  const res = await fetch(`${API_BASE}/controls/${id}`, { headers: buildHeaders(userId) })
-  return handleResponse<SingleResponse<ControlDetail>>(res)
-}
-
-export interface ControlFrameworkMappingItem {
-  id: string
-  control_id: string
-  framework_clause_id: string
-  created_at: string
-  updated_at: string
-}
-
-export async function listControlFrameworkMappings(params: { control_id?: string; framework_clause_id?: string; page?: number; page_size?: number }, userId?: string): Promise<PaginatedResponse<ControlFrameworkMappingItem>> {
-  const sp = new URLSearchParams()
-  if (params.control_id) sp.set('control_id', params.control_id)
-  if (params.framework_clause_id) sp.set('framework_clause_id', params.framework_clause_id)
-  if (params.page) sp.set('page', String(params.page))
-  if (params.page_size) sp.set('page_size', String(params.page_size))
-  const qs = sp.toString()
-  const res = await fetch(`${API_BASE}/control-framework-mappings${qs ? '?' + qs : ''}`, { headers: buildHeaders(userId) })
-  return handleResponse<PaginatedResponse<ControlFrameworkMappingItem>>(res)
-}
-
-export async function createControlFrameworkMapping(body: { control_id: string; framework_clause_id: string }, userId?: string): Promise<SingleResponse<ControlFrameworkMappingItem>> {
-  const res = await fetch(`${API_BASE}/control-framework-mappings`, {
-    method: 'POST',
+export async function toggleTenantModule(
+  organizationId: string,
+  configId: string,
+  enabled: boolean,
+  userId?: string,
+): Promise<ToggleModuleResponse> {
+  const res = await fetch(`${API_BASE}/tenants/${encodeURIComponent(organizationId)}/modules/${encodeURIComponent(configId)}`, {
+    method: 'PATCH',
     headers: buildHeaders(userId),
-    body: JSON.stringify(body),
+    body: JSON.stringify({ enabled }),
   })
-  return handleResponse<SingleResponse<ControlFrameworkMappingItem>>(res)
-}
-
-export async function deleteControlFrameworkMapping(id: string, userId?: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/control-framework-mappings/${id}`, {
-    method: 'DELETE',
-    headers: buildHeaders(userId),
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: 'unknown', message: 'Request failed' }))
-    throw body as ApiError
-  }
-}
-
-export interface ControlRiskMappingItem {
-  id: string
-  control_id: string
-  risk_id: string
-  created_at: string
-  updated_at: string
-}
-
-export async function listControlRiskMappings(params: { control_id?: string; risk_id?: string; page?: number; page_size?: number }, userId?: string): Promise<PaginatedResponse<ControlRiskMappingItem>> {
-  const sp = new URLSearchParams()
-  if (params.control_id) sp.set('control_id', params.control_id)
-  if (params.risk_id) sp.set('risk_id', params.risk_id)
-  if (params.page) sp.set('page', String(params.page))
-  if (params.page_size) sp.set('page_size', String(params.page_size))
-  const qs = sp.toString()
-  const res = await fetch(`${API_BASE}/control-risk-mappings${qs ? '?' + qs : ''}`, { headers: buildHeaders(userId) })
-  return handleResponse<PaginatedResponse<ControlRiskMappingItem>>(res)
-}
-
-export async function createControlRiskMapping(body: { control_id: string; risk_id: string }, userId?: string): Promise<SingleResponse<ControlRiskMappingItem>> {
-  const res = await fetch(`${API_BASE}/control-risk-mappings`, {
-    method: 'POST',
-    headers: buildHeaders(userId),
-    body: JSON.stringify(body),
-  })
-  return handleResponse<SingleResponse<ControlRiskMappingItem>>(res)
-}
-
-export async function deleteControlRiskMapping(id: string, userId?: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/control-risk-mappings/${id}`, {
-    method: 'DELETE',
-    headers: buildHeaders(userId),
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: 'unknown', message: 'Request failed' }))
-    throw body as ApiError
-  }
+  return handleResponse<ToggleModuleResponse>(res)
 }

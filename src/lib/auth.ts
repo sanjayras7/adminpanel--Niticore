@@ -18,6 +18,12 @@ export const ACTION_PERMISSIONS: Record<string, string[]> = {
   'tenant.force_verify_domain': ['Super Admin', 'Implementation Manager'],
   'tenant.disable': ['Super Admin'],
   'tenant.unlock_user': ['Super Admin', 'Support'],
+  'support.read.tenant_profile': ['Super Admin', 'Implementation Manager', 'Customer Success', 'Support', 'Finance/Admin', 'Engineering', 'Read-only Auditor'],
+  'support.read.customer_admins': ['Super Admin', 'Implementation Manager', 'Customer Success', 'Support', 'Engineering', 'Read-only Auditor'],
+  'support.read.provisioning_logs': ['Super Admin', 'Implementation Manager', 'Customer Success', 'Support', 'Engineering', 'Read-only Auditor'],
+  'support.read.integration_health': ['Super Admin', 'Implementation Manager', 'Customer Success', 'Support', 'Engineering', 'Read-only Auditor'],
+  'support.read.usage_errors': ['Super Admin', 'Implementation Manager', 'Customer Success', 'Support', 'Engineering', 'Read-only Auditor'],
+  'tenant.framework_config.history': ['Super Admin', 'Implementation Manager', 'Customer Success', 'Support', 'Engineering', 'Read-only Auditor'],
 }
 
 export const SENSITIVE_ACTIONS: Set<string> = new Set([
