@@ -23,6 +23,7 @@ export const ACTION_PERMISSIONS: Record<string, string[]> = {
   'support.read.provisioning_logs': ['Super Admin', 'Implementation Manager', 'Customer Success', 'Support', 'Engineering', 'Read-only Auditor'],
   'support.read.integration_health': ['Super Admin', 'Implementation Manager', 'Customer Success', 'Support', 'Engineering', 'Read-only Auditor'],
   'support.read.usage_errors': ['Super Admin', 'Implementation Manager', 'Customer Success', 'Support', 'Engineering', 'Read-only Auditor'],
+  'tenant.framework_config.history': ['Super Admin', 'Implementation Manager', 'Customer Success', 'Support', 'Engineering', 'Read-only Auditor'],
 }
 
 export const SENSITIVE_ACTIONS: Set<string> = new Set([

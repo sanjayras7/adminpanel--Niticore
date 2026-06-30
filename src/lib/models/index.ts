@@ -31,6 +31,7 @@ import { TenantProvisioningLog } from './TenantProvisioningLog'
 import { TenantProvisioningDetail } from './TenantProvisioningDetail'
 import { ControlFrameworkMapping } from './ControlFrameworkMapping'
 import { ControlRiskMapping } from './ControlRiskMapping'
+import { TenantFrameworkConfig } from './TenantFrameworkConfig'
 
 InternalRole.hasMany(InternalUser, { foreignKey: 'internal_role_id', as: 'users' })
 
@@ -62,6 +63,9 @@ LegalDocument.belongsTo(Organization, { foreignKey: 'organization_id', as: 'orga
 
 TenantProvisioningLog.hasMany(TenantProvisioningDetail, { foreignKey: 'provisioning_log_id', as: 'details' })
 TenantProvisioningDetail.belongsTo(TenantProvisioningLog, { foreignKey: 'provisioning_log_id', as: 'log' })
+
+TenantFrameworkConfig.belongsTo(Framework, { foreignKey: 'framework_id', as: 'framework' })
+TenantFrameworkConfig.belongsTo(FrameworkVersion, { foreignKey: 'framework_version_id', as: 'frameworkVersion' })
 
 export {
   InternalUser,
@@ -95,6 +99,7 @@ export {
   TenantProvisioningDetail,
   ControlFrameworkMapping,
   ControlRiskMapping,
+  TenantFrameworkConfig,
 }
 
 export function initModels(): void {
@@ -133,4 +138,5 @@ export function initModels(): void {
   TenantProvisioningDetail
   ControlFrameworkMapping
   ControlRiskMapping
+  TenantFrameworkConfig
 }
