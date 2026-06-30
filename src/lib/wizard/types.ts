@@ -19,6 +19,9 @@ export interface AdminRequestBody {
   name: string
   surname: string
   email: string
+  job_title?: string
+  invite_timing?: 'send_now' | 'defer'
+  organization_id?: string
 }
 
 export interface ModuleSelection {

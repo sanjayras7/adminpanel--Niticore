@@ -264,6 +264,30 @@ export interface ToggleModuleResponse {
   data: Record<string, unknown>
 }
 
+export async function saveAdminInvite(
+  body: { name: string; surname: string; email: string; job_title?: string; invite_timing?: string; organization_id: string },
+  userId?: string,
+): Promise<{ admin_id: string; invite_sent: boolean; warnings?: Array<{ code: string }> }> {
+  const res = await fetch(`${API_BASE}/onboarding/wizard/admin`, {
+    method: 'POST',
+    headers: buildHeaders(userId),
+    body: JSON.stringify(body),
+  })
+  return handleResponse(res)
+}
+
+export async function saveModuleSelection(
+  body: { organization_id: string; modules: Array<{ module_id: string; enabled: boolean }> },
+  userId?: string,
+): Promise<{ updated: boolean; module_count: number }> {
+  const res = await fetch(`${API_BASE}/onboarding/wizard/modules`, {
+    method: 'POST',
+    headers: buildHeaders(userId),
+    body: JSON.stringify(body),
+  })
+  return handleResponse(res)
+}
+
 export async function toggleTenantModule(
   organizationId: string,
   configId: string,
@@ -429,6 +453,70 @@ export async function updateImplementationStep(controlId: string, versionId: str
 
 export async function deleteImplementationStep(controlId: string, versionId: string, stepId: string, userId?: string): Promise<void> {
   const res = await fetch(`${API_BASE}/controls/${controlId}/versions/${versionId}/implementation-steps/${stepId}`, {
+    method: 'DELETE',
+    headers: buildHeaders(userId),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: 'unknown', message: 'Request failed' }))
+    throw body as ApiError
+  }
+}
+
+// ---- Control-Framework Mappings ----
+
+export async function listControlFrameworkMappings(params?: { control_id?: string; page?: number; page_size?: number }, userId?: string): Promise<PaginatedResponse<Record<string, unknown>>> {
+  const sp = new URLSearchParams()
+  if (params?.control_id) sp.set('control_id', params.control_id)
+  if (params?.page) sp.set('page', String(params.page))
+  if (params?.page_size) sp.set('page_size', String(params.page_size))
+  const qs = sp.toString()
+  const res = await fetch(`${API_BASE}/control-framework-mappings${qs ? '?' + qs : ''}`, { headers: buildHeaders(userId) })
+  return handleResponse<PaginatedResponse<Record<string, unknown>>>(res)
+}
+
+export async function createControlFrameworkMapping(body: { control_id: string; framework_clause_id: string }, userId?: string): Promise<SingleResponse<Record<string, unknown>>> {
+  const res = await fetch(`${API_BASE}/control-framework-mappings`, {
+    method: 'POST',
+    headers: buildHeaders(userId),
+    body: JSON.stringify(body),
+  })
+  return handleResponse<SingleResponse<Record<string, unknown>>>(res)
+}
+
+export async function deleteControlFrameworkMapping(id: string, userId?: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/control-framework-mappings/${id}`, {
+    method: 'DELETE',
+    headers: buildHeaders(userId),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: 'unknown', message: 'Request failed' }))
+    throw body as ApiError
+  }
+}
+
+// ---- Control-Risk Mappings ----
+
+export async function listControlRiskMappings(params?: { control_id?: string; page?: number; page_size?: number }, userId?: string): Promise<PaginatedResponse<Record<string, unknown>>> {
+  const sp = new URLSearchParams()
+  if (params?.control_id) sp.set('control_id', params.control_id)
+  if (params?.page) sp.set('page', String(params.page))
+  if (params?.page_size) sp.set('page_size', String(params.page_size))
+  const qs = sp.toString()
+  const res = await fetch(`${API_BASE}/control-risk-mappings${qs ? '?' + qs : ''}`, { headers: buildHeaders(userId) })
+  return handleResponse<PaginatedResponse<Record<string, unknown>>>(res)
+}
+
+export async function createControlRiskMapping(body: { control_id: string; risk_id: string }, userId?: string): Promise<SingleResponse<Record<string, unknown>>> {
+  const res = await fetch(`${API_BASE}/control-risk-mappings`, {
+    method: 'POST',
+    headers: buildHeaders(userId),
+    body: JSON.stringify(body),
+  })
+  return handleResponse<SingleResponse<Record<string, unknown>>>(res)
+}
+
+export async function deleteControlRiskMapping(id: string, userId?: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/control-risk-mappings/${id}`, {
     method: 'DELETE',
     headers: buildHeaders(userId),
   })

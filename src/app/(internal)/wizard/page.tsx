@@ -1,16 +1,18 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { WizardProvider, useWizard, WizardStep } from '@/lib/wizard/WizardContext'
 import { WizardShell } from '@/lib/wizard/WizardShell'
 import { CustomerProfileStep } from '@/lib/wizard/steps/CustomerProfileStep'
 import { PlanLifecycleStep } from '@/lib/wizard/steps/PlanLifecycleStep'
+import { AdminSetupStep } from '@/lib/wizard/steps/AdminSetupStep'
+import { ModuleSelectionStep } from '@/lib/wizard/steps/ModuleSelectionStep'
 import { FrameworkSelectionStep } from '@/lib/wizard/steps/FrameworkSelectionStep'
 import { IntegrationSetupStep } from '@/lib/wizard/steps/IntegrationSetupStep'
-import { validateCustomerProfile, validatePlanLifecycle, validateFrameworkSelection, validateIntegrationIntent } from '@/lib/validation/wizard'
-import { getWizardPrefill } from '@/lib/frontend/api'
-import { CustomerProfileData, PlanLifecycleData, FrameworkStepData, IntegrationIntentData, ReferenceData } from '@/lib/wizard/types'
+import { validateCustomerProfile, validatePlanLifecycle, validateAdminInvite, validateModuleSelection, validateFrameworkSelection, validateIntegrationIntent } from '@/lib/validation/wizard'
+import { saveAdminInvite, saveModuleSelection, getWizardPrefill, ApiError } from '@/lib/frontend/api'
+import { CustomerProfileData, PlanLifecycleData, AdminRequestBody, ModuleSelection as ModuleSelectionType, FrameworkStepData, IntegrationIntentData, ReferenceData } from '@/lib/wizard/types'
 
 function PlaceholderStep(_props: { data?: unknown; onUpdate?: (d: unknown) => void; errors?: Record<string, string> }) {
   return (
@@ -88,6 +90,64 @@ async function saveIntegrationIntent(data: IntegrationIntentData): Promise<Recor
     return {}
   } catch {
     return { _form: 'Failed to save integration intent — try again' }
+  }
+}
+
+const ADMIN_API = '/api/v1/internal/onboarding/wizard/admin'
+
+async function saveAdmin(data: AdminRequestBody): Promise<Record<string, string>> {
+  if (!data.organization_id) {
+    return { _form: 'Organization ID is required. Complete previous steps first.' }
+  }
+  try {
+    const body = {
+      organization_id: data.organization_id,
+      name: data.name,
+      surname: data.surname,
+      email: data.email,
+      job_title: data.job_title || undefined,
+      invite_timing: data.invite_timing || 'defer',
+    }
+    const res = await fetch(ADMIN_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}))
+      if (errBody.fields) {
+        const fieldErrors: Record<string, string> = {}
+        for (const [key, msg] of Object.entries(errBody.fields)) {
+          fieldErrors[key] = msg === 'already_exists' ? 'An account with this email already exists' : (msg as string)
+        }
+        return fieldErrors
+      }
+      return { _form: errBody.message || 'Failed to save admin' }
+    }
+    return {}
+  } catch {
+    return { _form: 'Failed to save admin — try again' }
+  }
+}
+
+let wizardOrgId: string | undefined
+
+async function saveModules(data: ModuleSelectionType[]): Promise<Record<string, string>> {
+  if (!data || data.length === 0) {
+    return { _form: 'At least one module must be selected' }
+  }
+  if (!wizardOrgId) {
+    return { _form: 'Organization ID is required. Complete previous steps first.' }
+  }
+  try {
+    await saveModuleSelection({
+      organization_id: wizardOrgId,
+      modules: data.map(m => ({ module_id: m.moduleId, enabled: m.enabled })),
+    })
+    return {}
+  } catch (err) {
+    const apiErr = err as ApiError
+    return { _form: apiErr?.message || 'Failed to save module configuration' }
   }
 }
 
@@ -174,11 +234,19 @@ function useLeadPrefill(leadId: string | null) {
 }
 
 function WizardContent() {
-  const { currentStep, step1, step2, step3, step4, step5, step6, errors, updateStepData } = useWizard()
+  const { currentStep, step1, step2, step3, step4, step5, step6, errors, updateStepData, organizationId } = useWizard()
   const [owners, setOwners] = useState<ReferenceData['owners']>([])
+  const orgIdRef = useRef(organizationId)
   const searchParams = useSearchParams()
   const leadId = searchParams?.get('leadId') || null
   const { prefillLoading, prefillError } = useLeadPrefill(leadId)
+
+  useEffect(() => {
+    if (organizationId && organizationId !== orgIdRef.current) {
+      orgIdRef.current = organizationId
+      wizardOrgId = organizationId
+    }
+  }, [organizationId])
 
   useEffect(() => {
     let mounted = true

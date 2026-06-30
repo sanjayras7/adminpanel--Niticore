@@ -1,8 +1,9 @@
-import { CustomerProfileData, PlanLifecycleData, FrameworkStepData, IntegrationIntentData } from '@/lib/wizard/types'
+import { CustomerProfileData, PlanLifecycleData, AdminRequestBody, FrameworkStepData, IntegrationIntentData } from '@/lib/wizard/types'
 
 const SLUG_REGEX = /^[a-z0-9-]+$/
 const DOMAIN_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9-]*(\.[a-zA-Z]{2,})+$/
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const VALID_RISK_THRESHOLDS = ['low', 'medium', 'high', 'critical', 'all']
 
@@ -127,12 +128,71 @@ export function validateIntegrationIntent(data: IntegrationIntentData): Record<s
   return errors
 }
 
+export function validateAdminInvite(data: AdminRequestBody): Record<string, string> {
+  const errors: Record<string, string> = {}
+
+  if (!data.name || data.name.trim().length === 0) {
+    errors.name = 'First name is required'
+  } else if (data.name.length > 255) {
+    errors.name = 'First name must be 255 characters or less'
+  }
+
+  if (!data.surname || data.surname.trim().length === 0) {
+    errors.surname = 'Last name is required'
+  } else if (data.surname.length > 255) {
+    errors.surname = 'Last name must be 255 characters or less'
+  }
+
+  if (!data.email || data.email.trim().length === 0) {
+    errors.email = 'Email is required'
+  } else if (!EMAIL_REGEX.test(data.email.trim())) {
+    errors.email = 'Please enter a valid email address'
+  }
+
+  if (data.job_title && data.job_title.length > 255) {
+    errors.job_title = 'Job title must be 255 characters or less'
+  }
+
+  if (
+    data.invite_timing &&
+    data.invite_timing !== 'send_now' &&
+    data.invite_timing !== 'defer'
+  ) {
+    errors.invite_timing = 'Invite timing must be "send_now" or "defer"'
+  }
+
+  return errors
+}
+
+export function validateModuleSelection(data: {
+  organization_id?: string
+  modules?: Array<{ moduleId: string; enabled: boolean }>
+}): Record<string, string> {
+  const errors: Record<string, string> = {}
+
+  if (!Array.isArray(data.modules) || data.modules.length === 0) {
+    errors.modules = 'At least one module must be selected'
+    return errors
+  }
+
+  const enabledCount = data.modules.filter((m) => m.enabled).length
+  if (enabledCount === 0) {
+    errors.modules = 'At least one module must be enabled'
+  }
+
+  return errors
+}
+
 export function validateStep(stepNumber: number, data: any): Record<string, string> {
   switch (stepNumber) {
     case 1:
       return validateCustomerProfile(data)
     case 2:
       return validatePlanLifecycle(data)
+    case 3:
+      return validateAdminInvite(data)
+    case 4:
+      return validateModuleSelection(data)
     case 5:
       return validateFrameworkSelection(data)
     case 6:
