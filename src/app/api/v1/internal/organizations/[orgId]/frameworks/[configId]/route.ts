@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Op } from 'sequelize'
 import { TenantFrameworkConfig, Framework, FrameworkVersion } from '@/lib/models'
 import { getAuthUser, requireMutationAuth } from '@/lib/auth'
 import { writeAuditEvent } from '@/lib/audit'
@@ -56,6 +57,22 @@ export async function PUT(
     }
     if (newVersion.framework_id !== config.framework_id) {
       return NextResponse.json({ error: 'version_mismatch', message: 'Version does not belong to the same framework' }, { status: 400 })
+    }
+
+    const existingActive = await TenantFrameworkConfig.findOne({
+      where: {
+        organization_id: params.orgId,
+        framework_id: config.framework_id,
+        framework_version_id: body.framework_version_id,
+        is_active: true,
+        id: { [Op.ne]: params.configId },
+      },
+    })
+    if (existingActive) {
+      return NextResponse.json(
+        { error: 'conflict', message: 'Tenant already has an active config for this framework version' },
+        { status: 409 },
+      )
     }
 
     const beforeValues = {

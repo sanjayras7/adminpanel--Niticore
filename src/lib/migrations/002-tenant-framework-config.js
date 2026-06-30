@@ -11,14 +11,14 @@ async function up() {
     await sequelize.query(`
       CREATE TABLE IF NOT EXISTS tenant_framework_config (
         id UUID PRIMARY KEY,
-        organization_id UUID NOT NULL,
-        framework_id UUID NOT NULL,
-        framework_version_id UUID NOT NULL,
+        organization_id UUID NOT NULL REFERENCES public.organizations(id),
+        framework_id UUID NOT NULL REFERENCES public.frameworks(id),
+        framework_version_id UUID NOT NULL REFERENCES public.framework_versions(id),
         is_active BOOLEAN NOT NULL DEFAULT true,
-        assigned_by UUID NOT NULL,
+        assigned_by UUID NOT NULL REFERENCES internal_users(id),
         assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         deactivated_at TIMESTAMPTZ NULL,
-        deactivated_by UUID NULL,
+        deactivated_by UUID NULL REFERENCES internal_users(id),
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );

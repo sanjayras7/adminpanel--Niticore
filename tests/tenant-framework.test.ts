@@ -211,6 +211,7 @@ describe('Tenant Framework Config API - POST /api/v1/internal/organizations/:org
       TenantFrameworkConfig: { findOne: jest.fn(), create: jest.fn() },
       FrameworkVersion: { findByPk: jest.fn().mockResolvedValue(null) },
       Framework: {},
+      Organization: { findByPk: jest.fn() },
     }))
 
     const { POST } = await import('@/app/api/v1/internal/organizations/[orgId]/frameworks/route')
@@ -244,6 +245,7 @@ describe('Tenant Framework Config API - POST /api/v1/internal/organizations/:org
         }),
       },
       Framework: {},
+      Organization: { findByPk: jest.fn() },
     }))
 
     const { POST } = await import('@/app/api/v1/internal/organizations/[orgId]/frameworks/route')
@@ -277,6 +279,7 @@ describe('Tenant Framework Config API - POST /api/v1/internal/organizations/:org
         }),
       },
       Framework: {},
+      Organization: { findByPk: jest.fn() },
     }))
 
     const { POST } = await import('@/app/api/v1/internal/organizations/[orgId]/frameworks/route')
@@ -310,6 +313,7 @@ describe('Tenant Framework Config API - POST /api/v1/internal/organizations/:org
       Framework: {
         findByPk: jest.fn().mockResolvedValue(mockFramework),
       },
+      Organization: { findByPk: jest.fn().mockResolvedValue({ id: 'org-1' }) },
     }))
 
     const { POST } = await import('@/app/api/v1/internal/organizations/[orgId]/frameworks/route')
@@ -345,6 +349,7 @@ describe('Tenant Framework Config API - POST /api/v1/internal/organizations/:org
       Framework: {
         findByPk: jest.fn().mockResolvedValue(mockFramework),
       },
+      Organization: { findByPk: jest.fn().mockResolvedValue({ id: 'org-1' }) },
     }))
 
     jest.doMock('@/lib/audit', () => ({
@@ -367,6 +372,37 @@ describe('Tenant Framework Config API - POST /api/v1/internal/organizations/:org
     expect(response.status).toBe(201)
     expect(body.data.framework_version_id).toBe('ver-1')
     expect(auditCalled).toBe(true)
+  })
+
+  it('returns 404 when organization does not exist', async () => {
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+      requireMutationAuth: jest.fn(),
+    }))
+
+    jest.doMock('@/lib/models', () => ({
+      TenantFrameworkConfig: { findOne: jest.fn(), create: jest.fn() },
+      FrameworkVersion: {
+        findByPk: jest.fn().mockResolvedValue(mockFrameworkVersion),
+      },
+      Framework: {
+        findByPk: jest.fn().mockResolvedValue(mockFramework),
+      },
+      Organization: { findByPk: jest.fn().mockResolvedValue(null) },
+    }))
+
+    const { POST } = await import('@/app/api/v1/internal/organizations/[orgId]/frameworks/route')
+    const request = new Request('http://localhost/api/v1/internal/organizations/org-999/frameworks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      body: JSON.stringify({ framework_id: 'fw-1', framework_version_id: 'ver-1' }),
+    }) as never
+
+    const response = await POST(request, { params: { orgId: 'org-999' } })
+    const body = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(body.error).toBe('not_found')
   })
 })
 
@@ -429,6 +465,7 @@ describe('Tenant Framework Config API - PUT /api/v1/internal/organizations/:orgI
     jest.doMock('@/lib/models', () => ({
       TenantFrameworkConfig: {
         findByPk: jest.fn().mockResolvedValue(null),
+        findOne: jest.fn(),
       },
       Framework: {},
       FrameworkVersion: {},
@@ -477,6 +514,7 @@ describe('Tenant Framework Config API - PUT /api/v1/internal/organizations/:orgI
     jest.doMock('@/lib/models', () => ({
       TenantFrameworkConfig: {
         findByPk: jest.fn().mockResolvedValue(mockConfig),
+        findOne: jest.fn().mockResolvedValue(null),
       },
       FrameworkVersion: {
         findByPk: jest.fn().mockResolvedValue({
@@ -511,6 +549,7 @@ describe('Tenant Framework Config API - PUT /api/v1/internal/organizations/:orgI
     jest.doMock('@/lib/models', () => ({
       TenantFrameworkConfig: {
         findByPk: jest.fn().mockResolvedValue(mockConfig),
+        findOne: jest.fn().mockResolvedValue(null),
       },
       FrameworkVersion: {
         findByPk: jest.fn().mockResolvedValue({
@@ -552,6 +591,7 @@ describe('Tenant Framework Config API - PUT /api/v1/internal/organizations/:orgI
     jest.doMock('@/lib/models', () => ({
       TenantFrameworkConfig: {
         findByPk: jest.fn().mockResolvedValue(deactivatedConfig),
+        findOne: jest.fn(),
       },
       Framework: {},
       FrameworkVersion: {},
@@ -569,6 +609,47 @@ describe('Tenant Framework Config API - PUT /api/v1/internal/organizations/:orgI
 
     expect(response.status).toBe(409)
     expect(body.error).toBe('invalid_action')
+  })
+
+  it('returns 409 when target version already has an active config', async () => {
+    const duplicateConfig = {
+      ...mockConfig,
+      id: 'config-other',
+      framework_version_id: 'ver-2',
+    }
+
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
+      requireMutationAuth: jest.fn(),
+    }))
+
+    jest.doMock('@/lib/models', () => ({
+      TenantFrameworkConfig: {
+        findByPk: jest.fn().mockResolvedValue(mockConfig),
+        findOne: jest.fn().mockResolvedValue(duplicateConfig),
+      },
+      FrameworkVersion: {
+        findByPk: jest.fn().mockResolvedValue({
+          id: 'ver-2',
+          framework_id: 'fw-1',
+          status: 'active',
+        }),
+      },
+      Framework: {},
+    }))
+
+    const { PUT } = await import('@/app/api/v1/internal/organizations/[orgId]/frameworks/[configId]/route')
+    const request = new Request('http://localhost/api/v1/internal/organizations/org-1/frameworks/config-1', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'x-internal-user-id': 'user-1' },
+      body: JSON.stringify({ framework_version_id: 'ver-2' }),
+    }) as never
+
+    const response = await PUT(request, { params: { orgId: 'org-1', configId: 'config-1' } })
+    const body = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(body.error).toBe('conflict')
   })
 
   it('updates config successfully with audit event', async () => {
@@ -593,6 +674,7 @@ describe('Tenant Framework Config API - PUT /api/v1/internal/organizations/:orgI
     jest.doMock('@/lib/models', () => ({
       TenantFrameworkConfig: {
         findByPk: jest.fn().mockResolvedValue(updatableConfig),
+        findOne: jest.fn().mockResolvedValue(null),
       },
       FrameworkVersion: {
         findByPk: jest.fn().mockResolvedValue({
@@ -802,6 +884,7 @@ describe('Tenant Framework Config API - GET /api/v1/internal/organizations/:orgI
         }
       })()),
       requireMutationAuth: jest.fn(),
+      requirePermission: jest.fn(),
     }))
 
     const { GET } = await import('@/app/api/v1/internal/organizations/[orgId]/frameworks/[configId]/history/route')
@@ -817,6 +900,7 @@ describe('Tenant Framework Config API - GET /api/v1/internal/organizations/:orgI
     jest.doMock('@/lib/auth', () => ({
       getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
       requireMutationAuth: jest.fn(),
+      requirePermission: jest.fn(),
     }))
 
     jest.doMock('@/lib/models', () => ({
@@ -842,6 +926,7 @@ describe('Tenant Framework Config API - GET /api/v1/internal/organizations/:orgI
     jest.doMock('@/lib/auth', () => ({
       getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
       requireMutationAuth: jest.fn(),
+      requirePermission: jest.fn(),
     }))
 
     jest.doMock('@/lib/models', () => ({
@@ -904,12 +989,33 @@ describe('Tenant Framework Config API - GET /api/v1/internal/organizations/:orgI
     expect(body.data[1].action).toBe('tenant_framework_config.create')
   })
 
+  it('returns 403 for role without history permission', async () => {
+    jest.doMock('@/lib/auth', () => ({
+      getAuthUser: jest.fn().mockResolvedValue({ id: 'finance-1', roleName: 'Finance/Admin' }),
+      requireMutationAuth: jest.fn(),
+      requirePermission: jest.fn().mockImplementation(() => {
+        const err: Error & { statusCode?: number } = new Error('Role \'Finance/Admin\' is not authorized to perform \'tenant.framework_config.history\'')
+        err.statusCode = 403
+        throw err
+      }),
+    }))
+
+    const { GET } = await import('@/app/api/v1/internal/organizations/[orgId]/frameworks/[configId]/history/route')
+    const request = new Request('http://localhost/api/v1/internal/organizations/org-1/frameworks/config-1/history') as never
+    const response = await GET(request, { params: { orgId: 'org-1', configId: 'config-1' } })
+    const body = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(body.error).toBe('forbidden')
+  })
+
   it('returns empty array when no history exists', async () => {
     const mockDate = new Date('2026-01-01T00:00:00Z')
 
     jest.doMock('@/lib/auth', () => ({
       getAuthUser: jest.fn().mockResolvedValue({ id: 'user-1', roleName: 'Super Admin' }),
       requireMutationAuth: jest.fn(),
+      requirePermission: jest.fn(),
     }))
 
     jest.doMock('@/lib/models', () => ({

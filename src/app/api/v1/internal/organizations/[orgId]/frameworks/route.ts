@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
-import { TenantFrameworkConfig, Framework, FrameworkVersion } from '@/lib/models'
+import { TenantFrameworkConfig, Framework, FrameworkVersion, Organization } from '@/lib/models'
 import { getAuthUser, requireMutationAuth } from '@/lib/auth'
 import { writeAuditEvent } from '@/lib/audit'
 
@@ -93,6 +93,11 @@ export async function POST(
     const framework = await Framework.findByPk(body.framework_id)
     if (!framework) {
       return NextResponse.json({ error: 'not_found', message: 'Framework not found' }, { status: 404 })
+    }
+
+    const org = await Organization.findByPk(params.orgId)
+    if (!org) {
+      return NextResponse.json({ error: 'not_found', message: 'Organization not found' }, { status: 404 })
     }
 
     const existingActive = await TenantFrameworkConfig.findOne({

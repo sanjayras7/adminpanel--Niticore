@@ -1,16 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sequelize } from '@/lib/sequelize'
 import { TenantFrameworkConfig } from '@/lib/models'
-import { getAuthUser } from '@/lib/auth'
+import { getAuthUser, requirePermission } from '@/lib/auth'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { orgId: string; configId: string } },
 ): Promise<NextResponse> {
+  let authUser
   try {
-    await getAuthUser(request)
+    authUser = await getAuthUser(request)
   } catch {
     return NextResponse.json({ error: 'unauthorized', message: 'Authentication required' }, { status: 401 })
+  }
+
+  try {
+    requirePermission(authUser, 'tenant.framework_config.history')
+  } catch (err: unknown) {
+    const status = err instanceof Error && 'statusCode' in err ? (err as { statusCode: number }).statusCode : 403
+    return NextResponse.json({ error: 'forbidden', message: err instanceof Error ? err.message : 'Forbidden' }, { status })
   }
 
   try {
