@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react'
 import { WizardState, WizardStep, CustomerProfileData, PlanLifecycleData, AdminRequestBody, ModuleSelection, FrameworkStepData, IntegrationIntentData } from '@/lib/wizard/types'
+import { processServerValidationResponse } from '@/lib/validation/wizard'
 
 export { WizardStep }
 
@@ -147,23 +148,6 @@ export function WizardProvider({ children, steps }: { children: ReactNode; steps
     setState(initialState)
     setIsValidating(false)
   }, [])
-
-  function processServerValidationResponse(
-    serverErrors: Record<string, string>
-  ): { errors: Record<string, string>; warnings: Record<string, string> } {
-    const errors: Record<string, string> = {}
-    const warnings: Record<string, string> = {}
-
-    for (const [field, message] of Object.entries(serverErrors)) {
-      if (field === 'domain' && message.toLowerCase().includes('already')) {
-        warnings[field] = message
-      } else {
-        errors[field] = message
-      }
-    }
-
-    return { errors, warnings }
-  }
 
   return (
     <WizardContext.Provider
