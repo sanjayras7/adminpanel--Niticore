@@ -51,3 +51,9 @@ export function requireMutationAuth(authUser: AuthUser): void {
     throw new AuthError('Read-only Auditor cannot perform mutations', 403)
   }
 }
+
+export function requireRoles(authUser: AuthUser, allowedRoles: string[]): void {
+  if (!authUser.roleName || !allowedRoles.includes(authUser.roleName)) {
+    throw new AuthError(`Required role: ${allowedRoles.join(' or ')}`, 403)
+  }
+}
