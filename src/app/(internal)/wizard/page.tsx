@@ -12,6 +12,15 @@ import { validateCustomerProfile, validatePlanLifecycle, validateFrameworkSelect
 import { getWizardPrefill } from '@/lib/frontend/api'
 import { CustomerProfileData, PlanLifecycleData, FrameworkStepData, IntegrationIntentData, ReferenceData } from '@/lib/wizard/types'
 
+function PlaceholderStep(_props: { data?: unknown; onUpdate?: (d: unknown) => void; errors?: Record<string, string> }) {
+  return (
+    <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+      <p className="text-gray-500">This step will be implemented in a follow-up issue.</p>
+      <p className="text-sm text-gray-400 mt-1">Click Next to continue.</p>
+    </div>
+  )
+}
+
 const REFERENCE_DATA_API = '/api/v1/internal/wizard/reference-data'
 const VALIDATE_STEP_API = '/api/v1/internal/wizard/validate-step'
 
@@ -96,6 +105,18 @@ const steps: WizardStep[] = [
     component: PlanLifecycleStep,
     validate: validatePlanLifecycle,
     serverValidate: (data: PlanLifecycleData) => validateStepOnServer(2, data),
+  },
+  {
+    stepNumber: 3,
+    label: 'Primary Admin',
+    component: PlaceholderStep,
+    validate: () => ({}),
+  },
+  {
+    stepNumber: 4,
+    label: 'Modules',
+    component: PlaceholderStep,
+    validate: () => ({}),
   },
   {
     stepNumber: 5,
