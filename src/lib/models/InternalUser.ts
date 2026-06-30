@@ -1,16 +1,21 @@
 import { DataTypes, Model } from 'sequelize'
 import { sequelize } from '@/lib/sequelize'
+import { InternalRole } from './InternalRole'
 
 export interface InternalUserAttributes {
   id: string
   name: string
   surname: string
   email: string
+  job_title: string | null
   internal_role_id: string | null
   status: 'active' | 'inactive' | 'locked'
   totp_enabled: boolean
   totp_secret_encrypted: string | null
   totp_enrolled_at: Date | null
+  totp_reset_at: Date | null
+  totp_reset_by: string | null
+  totp_reset_reason: string | null
   last_login_at: Date | null
   last_totp_verified_at: Date | null
   failed_totp_attempt_count: number
@@ -25,11 +30,15 @@ export class InternalUser extends Model<InternalUserAttributes> implements Inter
   declare name: string
   declare surname: string
   declare email: string
+  declare job_title: string | null
   declare internal_role_id: string | null
   declare status: 'active' | 'inactive' | 'locked'
   declare totp_enabled: boolean
   declare totp_secret_encrypted: string | null
   declare totp_enrolled_at: Date | null
+  declare totp_reset_at: Date | null
+  declare totp_reset_by: string | null
+  declare totp_reset_reason: string | null
   declare last_login_at: Date | null
   declare last_totp_verified_at: Date | null
   declare failed_totp_attempt_count: number
@@ -37,6 +46,8 @@ export class InternalUser extends Model<InternalUserAttributes> implements Inter
   declare created_at: Date
   declare updated_at: Date
   declare deleted_at: Date | null
+
+  declare role?: InternalRole
 }
 
 InternalUser.init(
@@ -48,7 +59,8 @@ InternalUser.init(
     },
     name: { type: DataTypes.STRING(255), allowNull: false },
     surname: { type: DataTypes.STRING(255), allowNull: false },
-    email: { type: DataTypes.STRING(255), allowNull: false, unique: true },
+    email: { type: DataTypes.STRING(320), allowNull: false, unique: true },
+    job_title: { type: DataTypes.STRING(255), allowNull: true },
     internal_role_id: { type: DataTypes.UUID, allowNull: true },
     status: {
       type: DataTypes.ENUM('active', 'inactive', 'locked'),
@@ -58,6 +70,9 @@ InternalUser.init(
     totp_enabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     totp_secret_encrypted: { type: DataTypes.TEXT, allowNull: true },
     totp_enrolled_at: { type: DataTypes.DATE, allowNull: true },
+    totp_reset_at: { type: DataTypes.DATE, allowNull: true },
+    totp_reset_by: { type: DataTypes.UUID, allowNull: true },
+    totp_reset_reason: { type: DataTypes.TEXT, allowNull: true },
     last_login_at: { type: DataTypes.DATE, allowNull: true },
     last_totp_verified_at: { type: DataTypes.DATE, allowNull: true },
     failed_totp_attempt_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
@@ -74,3 +89,8 @@ InternalUser.init(
     paranoid: true,
   },
 )
+
+InternalUser.belongsTo(InternalRole, {
+  foreignKey: 'internal_role_id',
+  as: 'role',
+})

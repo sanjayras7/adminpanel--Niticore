@@ -35,3 +35,33 @@ export async function sendMagicLinkEmail(email: string, token: string, otp: stri
     console.error('[EMAIL] Failed to send email:', err)
   }
 }
+
+export async function sendAdminInviteEmail(email: string, adminName: string): Promise<boolean> {
+  const payload: EmailPayload = {
+    to: email,
+    subject: 'You have been invited to Niticore Admin',
+    body: `Hello ${adminName},\n\nYou have been invited to join Niticore Admin as an organization administrator.\n\nPlease check your account to accept the invitation.\n\nThis invitation will expire in 7 days.`,
+  }
+
+  if (config.isTest) {
+    return true
+  }
+
+  try {
+    const { hostname } = new URL(config.email.magicLinkBaseUrl)
+
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      console.log(`[EMAIL] To: ${payload.to}`)
+      console.log(`[EMAIL] Subject: ${payload.subject}`)
+      console.log(`[EMAIL] Body:\n${payload.body}`)
+      return true
+    }
+
+    console.error(`[EMAIL] No email provider configured for ${hostname}. Email would be sent:`)
+    console.error(`[EMAIL] To: ${payload.to}, Subject: ${payload.subject}`)
+    return false
+  } catch (err) {
+    console.error('[EMAIL] Failed to send admin invite email:', err)
+    return false
+  }
+}
