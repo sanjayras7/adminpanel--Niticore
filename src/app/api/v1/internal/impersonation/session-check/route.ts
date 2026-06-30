@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Op } from 'sequelize'
 import { ImpersonationSession } from '@/lib/models/ImpersonationSession'
+import { InternalUser, InternalRole } from '@/lib/models'
 import { getActiveImpersonationSession } from '@/lib/middleware/impersonation'
-import { writeAuditEvent } from '@/lib/audit'
+import { logAuditEvent } from '@/lib/audit'
 
 export async function GET(request: NextRequest) {
   const userId = request.headers.get('x-internal-user-id')
@@ -24,16 +25,29 @@ export async function GET(request: NextRequest) {
       expiredSession.ended_at = new Date()
       await expiredSession.save()
 
-      writeAuditEvent({
-        actor_internal_user_id: userId,
-        actor_role: null,
+      let actorRole = 'SYSTEM'
+      try {
+        const user = await InternalUser.findByPk(userId, {
+          include: [{ model: InternalRole, as: 'role' }],
+        })
+        if (user) {
+          const role = user.get('role') as InternalRole | null
+          actorRole = role?.name ?? 'SYSTEM'
+        }
+      } catch {
+        console.error('[IMPERSONATION] Failed to look up user role for audit:', userId)
+      }
+
+      await logAuditEvent({
+        actorInternalUserId: userId,
+        actorRole,
         action: 'impersonation.expired',
-        target_type: 'impersonation_session',
-        target_id: expiredSession.id,
-        organization_id: expiredSession.organization_id,
+        targetType: 'impersonation_session',
+        targetId: expiredSession.id,
+        organizationId: expiredSession.organization_id,
         reason: null,
-        ip_address: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown',
-        user_agent: request.headers.get('user-agent') || undefined,
+        ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        userAgent: request.headers.get('user-agent') || null,
       })
     }
 

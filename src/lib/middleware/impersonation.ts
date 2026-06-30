@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Op } from 'sequelize'
 import { ImpersonationSession } from '@/lib/models/ImpersonationSession'
-import { writeAuditEvent } from '@/lib/audit'
+import { logAuditEvent } from '@/lib/audit'
+import { InternalUser, InternalRole } from '@/lib/models'
 
 const MUTATING_METHODS = ['POST', 'PATCH', 'PUT', 'DELETE']
 
@@ -42,16 +43,29 @@ export async function checkImpersonationBlock(
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
     const userAgent = request.headers.get('user-agent') || undefined
 
-    writeAuditEvent({
-      actor_internal_user_id: userId,
-      actor_role: null,
+    let actorRole = 'SYSTEM'
+    try {
+      const user = await InternalUser.findByPk(userId, {
+        include: [{ model: InternalRole, as: 'role' }],
+      })
+      if (user) {
+        const role = user.get('role') as InternalRole | null
+        actorRole = role?.name ?? 'SYSTEM'
+      }
+    } catch {
+      console.error('[IMPERSONATION] Failed to look up user role for audit:', userId)
+    }
+
+    await logAuditEvent({
+      actorInternalUserId: userId,
+      actorRole,
       action: 'impersonation.expired',
-      target_type: 'impersonation_session',
-      target_id: session.id,
-      organization_id: session.organization_id,
+      targetType: 'impersonation_session',
+      targetId: session.id,
+      organizationId: session.organization_id,
       reason: null,
-      ip_address: ip,
-      user_agent: userAgent,
+      ipAddress: ip || null,
+      userAgent: userAgent || null,
     })
 
     return NextResponse.json(

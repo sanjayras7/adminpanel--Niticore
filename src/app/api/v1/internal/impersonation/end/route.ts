@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Op } from 'sequelize'
 import { ImpersonationSession } from '@/lib/models/ImpersonationSession'
 import { getAuthUser, AuthError } from '@/lib/auth'
-import { writeAuditEvent } from '@/lib/audit'
+import { logAuditEvent } from '@/lib/audit'
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   let authUser
@@ -16,8 +16,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
-  const userAgent = request.headers.get('user-agent') || undefined
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null
+  const userAgent = request.headers.get('user-agent') || null
 
   let session
   try {
@@ -59,16 +59,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
   }
 
-  writeAuditEvent({
-    actor_internal_user_id: authUser.id,
-    actor_role: authUser.roleName,
+  await logAuditEvent({
+    actorInternalUserId: authUser.id,
+    actorRole: authUser.roleName ?? 'UNKNOWN',
     action: 'impersonation.end',
-    target_type: 'impersonation_session',
-    target_id: session.id,
-    organization_id: session.organization_id,
+    targetType: 'impersonation_session',
+    targetId: session.id,
+    organizationId: session.organization_id,
     reason: null,
-    ip_address: ip,
-    user_agent: userAgent,
+    ipAddress: ip,
+    userAgent: userAgent,
   })
 
   return NextResponse.json({
