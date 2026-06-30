@@ -1,5 +1,6 @@
 ﻿import { InternalUser } from './InternalUser'
 import { InternalRole } from './InternalRole'
+import { ImpersonationSession } from './ImpersonationSession'
 import { MagicLink } from './MagicLink'
 import { Framework } from './Framework'
 import { FrameworkClassification } from './FrameworkClassification'
@@ -70,6 +71,7 @@ TenantFrameworkConfig.belongsTo(FrameworkVersion, { foreignKey: 'framework_versi
 export {
   InternalUser,
   InternalRole,
+  ImpersonationSession,
   MagicLink,
   InternalAuditEvent,
   InternalSession,
@@ -106,6 +108,7 @@ export function initModels(): void {
   InternalUser
   MagicLink
   InternalRole
+  ImpersonationSession
   InternalAuditEvent
   InternalSession
   Lead

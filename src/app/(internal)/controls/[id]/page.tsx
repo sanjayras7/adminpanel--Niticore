@@ -2,6 +2,14 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/lib/auth/AuthContext'
+import { getControl, createControlVersion, deleteControlVersion, publishControlVersion, updateControl, type ControlDetail, type VersionSummary } from '@/lib/frontend/api'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
+
+const statusColors: Record<string, string> = {
+  draft: '#f0ad4e',
+  active: '#5cb85c',
+  deprecated: '#999',
 import {
   getControl,
   listControlFrameworkMappings, createControlFrameworkMapping, deleteControlFrameworkMapping,
