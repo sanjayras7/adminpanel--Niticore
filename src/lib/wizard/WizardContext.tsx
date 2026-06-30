@@ -17,12 +17,14 @@ interface WizardContextType extends WizardState {
   resetWizard: () => void
   isValidating: boolean
   setIsValidating: (isValidating: boolean) => void
+  setOrganizationId: (id: string) => void
 }
 
 const WizardContext = createContext<WizardContextType | undefined>(undefined)
 
 const initialState: WizardState = {
   currentStep: 1,
+  organizationId: undefined,
   step1: undefined,
   step2: undefined,
   step3: undefined,
@@ -137,6 +139,10 @@ export function WizardProvider({ children, steps }: { children: ReactNode; steps
     setState((prev) => ({ ...prev, errors: {} }))
   }, [])
 
+  const setOrganizationId = useCallback((id: string) => {
+    setState((prev) => ({ ...prev, organizationId: id }))
+  }, [])
+
   const resetWizard = useCallback(() => {
     setState(initialState)
     setIsValidating(false)
@@ -172,6 +178,7 @@ export function WizardProvider({ children, steps }: { children: ReactNode; steps
         resetWizard,
         isValidating,
         setIsValidating,
+        setOrganizationId,
       }}
     >
       {children}

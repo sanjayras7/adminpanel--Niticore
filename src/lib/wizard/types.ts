@@ -63,6 +63,7 @@ export interface WizardPrefillResponse {
 
 export interface WizardState {
   currentStep: 1 | 2 | 3 | 4 | 5 | 6
+  organizationId?: string
   step1?: CustomerProfileData
   step2?: PlanLifecycleData
   step3?: any
