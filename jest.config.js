@@ -5,7 +5,7 @@ const createJestConfig = nextJest({ dir: './' })
 const customJestConfig = {
   moduleNameMapper: { '^@/(.*)$': '<rootDir>/src/$1' },
   testEnvironment: 'node',
-  testMatch: ['**/tests/**/*.test.ts', '**/tests/**/*.test.tsx'],
+  testMatch: ['**/tests/**/*.test.{ts,tsx}'],
   transform: { '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'tsconfig.json' }] },
 }
 

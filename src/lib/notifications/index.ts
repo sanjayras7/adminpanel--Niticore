@@ -1,0 +1,7 @@
+export { emitNotification, notificationEmitter } from './emitter'
+export { initNotificationDispatcher, resetDispatcherForTest } from './dispatcher'
+export { triggerEventBus } from './event-bus'
+export { registerTriggerHandlers } from './wiring'
+export { EventTypes } from './trigger-events'
+export type { TriggerEventPayload } from './trigger-events'
+export type { NotificationChannel, NotificationEvent, NotificationRecord } from './types'
