@@ -246,3 +246,34 @@ export async function getWizardPrefill(leadId: string, userId?: string): Promise
   const body = await handleResponse<{ data: import('@/lib/wizard/types').WizardPrefillResponse }>(res)
   return body.data
 }
+
+export interface TenantSubModule {
+  id: string
+  name: string
+  enabled: boolean
+  configId: string | null
+}
+
+export interface TenantModule {
+  moduleId: string
+  moduleName: string
+  subModules: TenantSubModule[]
+}
+
+export interface ToggleModuleResponse {
+  data: Record<string, unknown>
+}
+
+export async function toggleTenantModule(
+  organizationId: string,
+  configId: string,
+  enabled: boolean,
+  userId?: string,
+): Promise<ToggleModuleResponse> {
+  const res = await fetch(`${API_BASE}/tenants/${encodeURIComponent(organizationId)}/modules/${encodeURIComponent(configId)}`, {
+    method: 'PATCH',
+    headers: buildHeaders(userId),
+    body: JSON.stringify({ enabled }),
+  })
+  return handleResponse<ToggleModuleResponse>(res)
+}
