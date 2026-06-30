@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/lib/auth/AuthContext'
-import { listControls, createControl, deleteControl, type ControlItem } from '@/lib/frontend/api'
+import { listControls, type ControlItem } from '@/lib/frontend/api'
 import Link from 'next/link'
 
 export default function ControlListPage() {
@@ -14,11 +14,6 @@ export default function ControlListPage() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [showCreate, setShowCreate] = useState(false)
-  const [createCode, setCreateCode] = useState('')
-  const [createTitle, setCreateTitle] = useState('')
-  const [createDesc, setCreateDesc] = useState('')
-  const [creating, setCreating] = useState(false)
 
   const pageSize = 20
 
@@ -41,46 +36,12 @@ export default function ControlListPage() {
     load()
   }, [load])
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!createCode.trim() || !createTitle.trim()) return
-    setCreating(true)
-    try {
-      await createControl({ control_code: createCode.trim(), title: createTitle.trim(), description: createDesc.trim() || undefined }, user.id)
-      setShowCreate(false)
-      setCreateCode('')
-      setCreateTitle('')
-      setCreateDesc('')
-      setPage(1)
-      await load()
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to create control')
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  const handleDelete = async (id: string, code: string) => {
-    if (!confirm(`Delete control "${code}"? This cannot be undone.`)) return
-    try {
-      await deleteControl(id, user.id)
-      await load()
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to delete control')
-    }
-  }
-
   const totalPages = Math.ceil(total / pageSize)
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <h1 style={{ fontSize: 24, margin: 0 }}>Controls</h1>
-        {canMutate && (
-          <button onClick={() => setShowCreate(true)} style={{ padding: '8px 16px', background: '#1a1a2e', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 14 }}>
-            + New Control
-          </button>
-        )}
       </div>
 
       <div style={{ marginBottom: 16 }}>
@@ -107,7 +68,7 @@ export default function ControlListPage() {
           {search ? (
             <p style={{ fontSize: 13, margin: 0 }}>Try a different search term.</p>
           ) : (
-            <p style={{ fontSize: 13, margin: 0 }}>Create your first control to get started.</p>
+            <p style={{ fontSize: 13, margin: 0 }}>No controls have been created yet.</p>
           )}
         </div>
       )}
@@ -127,23 +88,18 @@ export default function ControlListPage() {
             <tbody>
               {controls.map((ctrl) => (
                 <tr key={ctrl.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                  <td style={{ padding: '10px 16px' }}>
-                    <Link href={`/controls/${ctrl.id}`} style={{ color: '#1a1a2e', textDecoration: 'none', fontWeight: 500 }}>
+                  <td style={{ padding: '10px 16px', fontWeight: 500 }}>
+                    <Link href={`/controls/${ctrl.id}`} style={{ color: '#1a1a2e', textDecoration: 'none' }}>
                       {ctrl.control_code}
                     </Link>
                   </td>
                   <td style={{ padding: '10px 16px', color: '#333', fontSize: 14 }}>{ctrl.title}</td>
-                  <td style={{ padding: '10px 16px', color: '#666', fontSize: 14 }}>{ctrl.description || '\u2014'}</td>
+                  <td style={{ padding: '10px 16px', color: '#666', fontSize: 14 }}>{ctrl.description || '—'}</td>
                   <td style={{ padding: '10px 16px', textAlign: 'center', fontSize: 14 }}>{ctrl.version_count}</td>
                   <td style={{ padding: '10px 16px', textAlign: 'right' }}>
-                    <Link href={`/controls/${ctrl.id}`} style={{ color: '#1a1a2e', textDecoration: 'none', fontSize: 13, marginRight: canMutate ? 12 : 0 }}>
+                    <Link href={`/controls/${ctrl.id}`} style={{ color: '#1a1a2e', textDecoration: 'none', fontSize: 13 }}>
                       View
                     </Link>
-                    {canMutate && (
-                      <button onClick={() => handleDelete(ctrl.id, ctrl.control_code)} style={{ background: 'none', border: 'none', color: '#c00', cursor: 'pointer', fontSize: 13, padding: 0 }}>
-                        Delete
-                      </button>
-                    )}
                   </td>
                 </tr>
               ))}
@@ -162,34 +118,6 @@ export default function ControlListPage() {
             </div>
           )}
         </>
-      )}
-
-      {showCreate && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <form onSubmit={handleCreate} style={{ background: '#fff', borderRadius: 8, padding: 24, width: '100%', maxWidth: 480, boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
-            <h2 style={{ fontSize: 18, margin: '0 0 16px' }}>Create Control</h2>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Control Code *</label>
-              <input value={createCode} onChange={(e) => setCreateCode(e.target.value)} placeholder="e.g. CC-1" required style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }} />
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Title *</label>
-              <input value={createTitle} onChange={(e) => setCreateTitle(e.target.value)} placeholder="e.g. Access Control" required style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box' }} />
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Description</label>
-              <textarea value={createDesc} onChange={(e) => setCreateDesc(e.target.value)} rows={3} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14, boxSizing: 'border-box', resize: 'vertical' }} />
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setShowCreate(false)} disabled={creating} style={{ padding: '8px 16px', background: '#fff', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', fontSize: 14 }}>
-                Cancel
-              </button>
-              <button type="submit" disabled={creating} style={{ padding: '8px 16px', background: '#1a1a2e', color: '#fff', border: 'none', borderRadius: 4, cursor: creating ? 'default' : 'pointer', fontSize: 14, opacity: creating ? 0.6 : 1 }}>
-                {creating ? 'Creating...' : 'Create'}
-              </button>
-            </div>
-          </form>
-        </div>
       )}
     </div>
   )

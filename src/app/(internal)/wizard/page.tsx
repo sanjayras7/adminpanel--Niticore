@@ -6,9 +6,11 @@ import { WizardProvider, useWizard, WizardStep } from '@/lib/wizard/WizardContex
 import { WizardShell } from '@/lib/wizard/WizardShell'
 import { CustomerProfileStep } from '@/lib/wizard/steps/CustomerProfileStep'
 import { PlanLifecycleStep } from '@/lib/wizard/steps/PlanLifecycleStep'
-import { validateCustomerProfile, validatePlanLifecycle } from '@/lib/validation/wizard'
+import { FrameworkSelectionStep } from '@/lib/wizard/steps/FrameworkSelectionStep'
+import { IntegrationSetupStep } from '@/lib/wizard/steps/IntegrationSetupStep'
+import { validateCustomerProfile, validatePlanLifecycle, validateFrameworkSelection, validateIntegrationIntent } from '@/lib/validation/wizard'
 import { getWizardPrefill } from '@/lib/frontend/api'
-import { CustomerProfileData, PlanLifecycleData, ReferenceData } from '@/lib/wizard/types'
+import { CustomerProfileData, PlanLifecycleData, FrameworkStepData, IntegrationIntentData, ReferenceData } from '@/lib/wizard/types'
 
 const REFERENCE_DATA_API = '/api/v1/internal/wizard/reference-data'
 const VALIDATE_STEP_API = '/api/v1/internal/wizard/validate-step'
@@ -37,6 +39,49 @@ async function validateStepOnServer(stepNumber: number, data: any): Promise<Reco
   }
 }
 
+const FRAMEWORKS_API = '/api/v1/internal/wizard/frameworks'
+const INTEGRATIONS_API = '/api/v1/internal/wizard/integrations'
+
+async function saveFrameworkSelections(data: FrameworkStepData): Promise<Record<string, string>> {
+  if (!data.organization_id) {
+    return { _form: 'Organization ID is required. Complete previous steps first.' }
+  }
+  try {
+    const res = await fetch(FRAMEWORKS_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      return { _form: body.message || 'Failed to save framework selections' }
+    }
+    return {}
+  } catch {
+    return { _form: 'Failed to save framework selections — try again' }
+  }
+}
+
+async function saveIntegrationIntent(data: IntegrationIntentData): Promise<Record<string, string>> {
+  if (!data.organization_id) {
+    return { _form: 'Organization ID is required. Complete previous steps first.' }
+  }
+  try {
+    const res = await fetch(INTEGRATIONS_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      return { _form: body.message || 'Failed to save integration intent' }
+    }
+    return {}
+  } catch {
+    return { _form: 'Failed to save integration intent — try again' }
+  }
+}
+
 const steps: WizardStep[] = [
   {
     stepNumber: 1,
@@ -52,10 +97,24 @@ const steps: WizardStep[] = [
     validate: validatePlanLifecycle,
     serverValidate: (data: PlanLifecycleData) => validateStepOnServer(2, data),
   },
+  {
+    stepNumber: 5,
+    label: 'Framework & Governance',
+    component: FrameworkSelectionStep,
+    validate: validateFrameworkSelection,
+    serverValidate: (data: FrameworkStepData) => saveFrameworkSelections(data),
+  },
+  {
+    stepNumber: 6,
+    label: 'Domain & Integrations',
+    component: IntegrationSetupStep,
+    validate: validateIntegrationIntent,
+    serverValidate: (data: IntegrationIntentData) => saveIntegrationIntent(data),
+  },
 ]
 
 function useLeadPrefill(leadId: string | null) {
-  const { updateStepData } = useWizard()
+  const { updateStepData, setOrganizationId } = useWizard()
   const [prefillLoading, setPrefillLoading] = useState(false)
   const [prefillError, setPrefillError] = useState<string | null>(null)
 
@@ -70,6 +129,7 @@ function useLeadPrefill(leadId: string | null) {
       .then((response) => {
         if (cancelled) return
 
+        if (response.organizationId) setOrganizationId(response.organizationId)
         if (response.step1) updateStepData(1, response.step1)
         if (response.step2) updateStepData(2, response.step2)
         if (response.step3) updateStepData(3, response.step3)
