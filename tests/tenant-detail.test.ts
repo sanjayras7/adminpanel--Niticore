@@ -140,23 +140,89 @@ describe('getOnboardingChecklist', () => {
 })
 
 describe('getProvisioningStatus', () => {
-  it('returns status and log entries', async () => {
+  it('returns log and details for successful provisioning', async () => {
     mockQuery
-      .mockResolvedValueOnce([{ status: 'completed' }])
       .mockResolvedValueOnce([
-        { id: 'e1', action: 'schema_created', detail: 'Tenant schema created', created_at: new Date('2025-06-01') },
+        {
+          id: 'log-1', organization_id: 'org-1', tenant_hash: 'abc123',
+          template_version_id: 'tmpl-v1', status: 'success',
+          failed_table: null, error_message: null,
+          started_at: new Date('2025-06-01T00:00:00Z'),
+          completed_at: new Date('2025-06-01T01:00:00Z'),
+          created_at: new Date('2025-06-01T00:00:00Z'),
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'det-1', provisioning_log_id: 'log-1',
+          schema_name: 'tenant_abc', table_name: 'users',
+          status: 'created', error_message: null, rows_created: 10,
+          started_at: new Date('2025-06-01T00:00:00Z'),
+          completed_at: new Date('2025-06-01T00:30:00Z'),
+        },
       ])
     const result = await getProvisioningStatus('org-1')
-    expect(result.status).toBe('completed')
-    expect(result.entries).toHaveLength(1)
-    expect(result.entries[0].action).toBe('schema_created')
+    expect(result.log).not.toBeNull()
+    expect(result.log!.status).toBe('success')
+    expect(result.log!.tenant_hash).toBe('abc123')
+    expect(result.details).toHaveLength(1)
+    expect(result.details[0].table_name).toBe('users')
   })
 
-  it('returns unknown status when org not found', async () => {
+  it('returns null log and empty details when no provisioning record', async () => {
     mockQuery.mockResolvedValue([])
     const result = await getProvisioningStatus('org-1')
-    expect(result.status).toBe('unknown')
-    expect(result.entries).toEqual([])
+    expect(result.log).toBeNull()
+    expect(result.details).toEqual([])
+  })
+
+  it('returns failed log with error detail', async () => {
+    mockQuery
+      .mockResolvedValueOnce([
+        {
+          id: 'log-2', organization_id: 'org-1', tenant_hash: 'def456',
+          template_version_id: 'tmpl-v1', status: 'failed',
+          failed_table: 'users', error_message: 'Column "email" already exists',
+          started_at: new Date('2025-06-01T00:00:00Z'),
+          completed_at: new Date('2025-06-01T00:10:00Z'),
+          created_at: new Date('2025-06-01T00:00:00Z'),
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'det-2', provisioning_log_id: 'log-2',
+          schema_name: 'tenant_def', table_name: 'users',
+          status: 'failed', error_message: 'Column "email" already exists',
+          rows_created: 0,
+          started_at: new Date('2025-06-01T00:00:00Z'),
+          completed_at: new Date('2025-06-01T00:10:00Z'),
+        },
+      ])
+    const result = await getProvisioningStatus('org-1')
+    expect(result.log!.status).toBe('failed')
+    expect(result.log!.failed_table).toBe('users')
+    expect(result.log!.error_message).toBe('Column "email" already exists')
+    expect(result.details).toHaveLength(1)
+    expect(result.details[0].status).toBe('failed')
+  })
+
+  it('returns in_progress log with null completed_at', async () => {
+    mockQuery
+      .mockResolvedValueOnce([
+        {
+          id: 'log-3', organization_id: 'org-1', tenant_hash: 'ghi789',
+          template_version_id: 'tmpl-v1', status: 'in_progress',
+          failed_table: null, error_message: null,
+          started_at: new Date('2025-06-01T00:00:00Z'),
+          completed_at: null,
+          created_at: new Date('2025-06-01T00:00:00Z'),
+        },
+      ])
+      .mockResolvedValueOnce([])
+    const result = await getProvisioningStatus('org-1')
+    expect(result.log!.status).toBe('in_progress')
+    expect(result.log!.completed_at).toBeNull()
+    expect(result.details).toEqual([])
   })
 })
 
@@ -214,7 +280,8 @@ describe('getTenantDetailPageData', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ status: 'active' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
@@ -225,6 +292,8 @@ describe('getTenantDetailPageData', () => {
     expect(result.sections.primaryAdmin).not.toBeNull()
     expect(result.sections.customerAdmins).toHaveLength(1)
     expect(result.errors).toEqual([])
+    expect(result.sections.provisioningStatus.log).toBeNull()
+    expect(result.sections.provisioningStatus.details).toEqual([])
   })
 
   it('collects per-section errors without failing the whole page', async () => {
@@ -235,7 +304,8 @@ describe('getTenantDetailPageData', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ status: 'active' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])

@@ -67,16 +67,34 @@ export interface OnboardingChecklistItem {
   completedAt: string | null
 }
 
-export interface ProvisioningEntry {
+export interface ProvisioningDetail {
   id: string
-  action: string
-  detail: string
-  createdAt: string
+  provisioning_log_id: string
+  schema_name: string
+  table_name: string
+  status: 'created' | 'skipped' | 'failed'
+  error_message: string | null
+  rows_created: number
+  started_at: string
+  completed_at: string | null
+}
+
+export interface ProvisioningLogInfo {
+  id: string
+  organization_id: string
+  tenant_hash: string
+  template_version_id: string
+  status: 'success' | 'failed' | 'in_progress'
+  failed_table: string | null
+  error_message: string | null
+  started_at: string
+  completed_at: string | null
+  created_at: string
 }
 
 export interface ProvisioningStatus {
-  status: string
-  entries: ProvisioningEntry[]
+  log: ProvisioningLogInfo | null
+  details: ProvisioningDetail[]
 }
 
 export interface ActivityEvent {
@@ -263,30 +281,64 @@ export async function getOnboardingChecklist(organizationId: string): Promise<On
 }
 
 export async function getProvisioningStatus(organizationId: string): Promise<ProvisioningStatus> {
-  const statusRows = await runQuery<{ status: string }>(
-    `SELECT status FROM organizations WHERE id = :id`,
-    { id: organizationId },
-  )
-  const status = statusRows.length > 0 ? statusRows[0].status : 'unknown'
-
-  const entries = await runQuery<{
-    id: string; action: string; detail: string; created_at: Date
+  const logRows = await runQuery<{
+    id: string; organization_id: string; tenant_hash: string; template_version_id: string;
+    status: string; failed_table: string | null; error_message: string | null;
+    started_at: Date; completed_at: Date | null; created_at: Date
   }>(
-    `SELECT id, action, detail, created_at
+    `SELECT id, organization_id, tenant_hash, template_version_id,
+            status, failed_table, error_message,
+            started_at, completed_at, created_at
      FROM tenant_provisioning_log
      WHERE organization_id = :orgId
-     ORDER BY created_at DESC LIMIT 50`,
+     ORDER BY created_at DESC LIMIT 1`,
     { orgId: organizationId },
   )
-  return {
-    status,
-    entries: entries.map((e) => ({
-      id: e.id,
-      action: e.action,
-      detail: e.detail,
-      createdAt: e.created_at.toISOString(),
-    })),
+
+  const log = logRows.length > 0
+    ? {
+        id: logRows[0].id,
+        organization_id: logRows[0].organization_id,
+        tenant_hash: logRows[0].tenant_hash,
+        template_version_id: logRows[0].template_version_id,
+        status: logRows[0].status as ProvisioningLogInfo['status'],
+        failed_table: logRows[0].failed_table,
+        error_message: logRows[0].error_message,
+        started_at: logRows[0].started_at.toISOString(),
+        completed_at: logRows[0].completed_at ? logRows[0].completed_at.toISOString() : null,
+        created_at: logRows[0].created_at.toISOString(),
+      }
+    : null
+
+  let details: ProvisioningDetail[] = []
+  if (log) {
+    const detailRows = await runQuery<{
+      id: string; provisioning_log_id: string; schema_name: string; table_name: string;
+      status: string; error_message: string | null; rows_created: number;
+      started_at: Date; completed_at: Date | null
+    }>(
+      `SELECT id, provisioning_log_id, schema_name, table_name,
+              status, error_message, rows_created,
+              started_at, completed_at
+       FROM tenant_provisioning_details
+       WHERE provisioning_log_id = :logId
+       ORDER BY started_at ASC`,
+      { logId: log.id },
+    )
+    details = detailRows.map((r) => ({
+      id: r.id,
+      provisioning_log_id: r.provisioning_log_id,
+      schema_name: r.schema_name,
+      table_name: r.table_name,
+      status: r.status as ProvisioningDetail['status'],
+      error_message: r.error_message,
+      rows_created: r.rows_created,
+      started_at: r.started_at.toISOString(),
+      completed_at: r.completed_at ? r.completed_at.toISOString() : null,
+    }))
   }
+
+  return { log, details }
 }
 
 export async function getIntegrationHealth(): Promise<unknown> {
@@ -394,7 +446,7 @@ export async function getTenantDetailPageData(organizationId: string): Promise<T
         enabledModules: [],
         applicableFrameworks: [],
         onboardingChecklist: [],
-        provisioningStatus: { status: 'unknown', entries: [] },
+        provisioningStatus: { log: null, details: [] },
         integrationHealth: null,
         activityTimeline: [],
         auditLog: [],
@@ -421,7 +473,7 @@ export async function getTenantDetailPageData(organizationId: string): Promise<T
     safeFetch('enabledModules', () => getEnabledModules(organizationId), []),
     safeFetch('applicableFrameworks', () => getApplicableFrameworks(organizationId), []),
     safeFetch('onboardingChecklist', () => getOnboardingChecklist(organizationId), []),
-    safeFetch('provisioningStatus', () => getProvisioningStatus(organizationId), { status: 'unknown', entries: [] }),
+    safeFetch('provisioningStatus', () => getProvisioningStatus(organizationId), { log: null, details: [] }),
     safeFetch('integrationHealth', () => getIntegrationHealth(), null),
     safeFetch('activityTimeline', () => getActivityTimeline(organizationId), []),
     safeFetch('auditLog', () => getAuditLog(organizationId), []),
