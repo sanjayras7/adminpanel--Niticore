@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { WizardProvider, useWizard, WizardStep } from '@/lib/wizard/WizardContext'
 import { WizardShell } from '@/lib/wizard/WizardShell'
@@ -11,7 +11,7 @@ import { ModuleSelectionStep } from '@/lib/wizard/steps/ModuleSelectionStep'
 import { FrameworkSelectionStep } from '@/lib/wizard/steps/FrameworkSelectionStep'
 import { IntegrationSetupStep } from '@/lib/wizard/steps/IntegrationSetupStep'
 import { validateCustomerProfile, validatePlanLifecycle, validateAdminInvite, validateModuleSelection, validateFrameworkSelection, validateIntegrationIntent } from '@/lib/validation/wizard'
-import { saveAdminInvite, saveModuleSelection, getWizardPrefill } from '@/lib/frontend/api'
+import { saveAdminInvite, saveModuleSelection, getWizardPrefill, ApiError } from '@/lib/frontend/api'
 import { CustomerProfileData, PlanLifecycleData, AdminRequestBody, ModuleSelection as ModuleSelectionType, FrameworkStepData, IntegrationIntentData, ReferenceData } from '@/lib/wizard/types'
 
 const REFERENCE_DATA_API = '/api/v1/internal/wizard/reference-data'
@@ -85,7 +85,6 @@ async function saveIntegrationIntent(data: IntegrationIntentData): Promise<Recor
 }
 
 const ADMIN_API = '/api/v1/internal/onboarding/wizard/admin'
-const MODULES_API = '/api/v1/internal/onboarding/wizard/modules'
 
 async function saveAdmin(data: AdminRequestBody): Promise<Record<string, string>> {
   if (!data.organization_id) {
@@ -122,11 +121,25 @@ async function saveAdmin(data: AdminRequestBody): Promise<Record<string, string>
   }
 }
 
+let wizardOrgId: string | undefined
+
 async function saveModules(data: ModuleSelectionType[]): Promise<Record<string, string>> {
   if (!data || data.length === 0) {
     return { _form: 'At least one module must be selected' }
   }
-  return {}
+  if (!wizardOrgId) {
+    return { _form: 'Organization ID is required. Complete previous steps first.' }
+  }
+  try {
+    await saveModuleSelection({
+      organization_id: wizardOrgId,
+      modules: data.map(m => ({ module_id: m.moduleId, enabled: m.enabled })),
+    })
+    return {}
+  } catch (err) {
+    const apiErr = err as ApiError
+    return { _form: apiErr?.message || 'Failed to save module configuration' }
+  }
 }
 
 const steps: WizardStep[] = [
@@ -214,11 +227,19 @@ function useLeadPrefill(leadId: string | null) {
 }
 
 function WizardContent() {
-  const { currentStep, step1, step2, step3, step4, step5, step6, errors, updateStepData } = useWizard()
+  const { currentStep, step1, step2, step3, step4, step5, step6, errors, updateStepData, organizationId } = useWizard()
   const [owners, setOwners] = useState<ReferenceData['owners']>([])
+  const orgIdRef = useRef(organizationId)
   const searchParams = useSearchParams()
   const leadId = searchParams?.get('leadId') || null
   const { prefillLoading, prefillError } = useLeadPrefill(leadId)
+
+  useEffect(() => {
+    if (organizationId && organizationId !== orgIdRef.current) {
+      orgIdRef.current = organizationId
+      wizardOrgId = organizationId
+    }
+  }, [organizationId])
 
   useEffect(() => {
     let mounted = true
