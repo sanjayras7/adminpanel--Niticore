@@ -233,7 +233,11 @@ export default function LeadsPage() {
               <tbody>
                 {leads.map((lead) => (
                   <tr key={lead.id} style={styles.tr}>
-                    <td style={styles.td}>{lead.company_name}</td>
+                    <td style={styles.td}>
+                      <a href={`/internal/leads/${lead.id}`} style={styles.leadLink}>
+                        {lead.company_name}
+                      </a>
+                    </td>
                     <td style={styles.td}>
                       {lead.contact_first_name} {lead.contact_last_name}
                     </td>
@@ -455,5 +459,10 @@ const styles: Record<string, React.CSSProperties> = {
   pageInfo: {
     fontSize: 13,
     color: '#666',
+  },
+  leadLink: {
+    color: '#0052CC',
+    textDecoration: 'none',
+    fontWeight: 500,
   },
 }
