@@ -29,6 +29,8 @@ import { GateOverride } from './GateOverride'
 import { Organization } from './Organization'
 import { TenantProvisioningLog } from './TenantProvisioningLog'
 import { TenantProvisioningDetail } from './TenantProvisioningDetail'
+import { ControlFrameworkMapping } from './ControlFrameworkMapping'
+import { ControlRiskMapping } from './ControlRiskMapping'
 
 InternalRole.hasMany(InternalUser, { foreignKey: 'internal_role_id', as: 'users' })
 
@@ -91,6 +93,8 @@ export {
   Organization,
   TenantProvisioningLog,
   TenantProvisioningDetail,
+  ControlFrameworkMapping,
+  ControlRiskMapping,
 }
 
 export function initModels(): void {
@@ -127,4 +131,6 @@ export function initModels(): void {
   Organization
   TenantProvisioningLog
   TenantProvisioningDetail
+  ControlFrameworkMapping
+  ControlRiskMapping
 }
