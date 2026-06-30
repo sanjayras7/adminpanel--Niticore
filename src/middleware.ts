@@ -28,7 +28,6 @@ export async function middleware(request: NextRequest) {
     const res = await fetch(url.toString(), {
       headers: {
         'x-internal-user-id': userId,
-        'x-mw-check': '1',
       },
     })
 

@@ -11,7 +11,7 @@ const REASON_MIN_LENGTH = 10
 const REASON_MAX_LENGTH = 500
 const IMPERSONATION_DURATION_MINUTES = 30
 
-function validateReason(reason: unknown): string | null {
+export function validateReason(reason: unknown): string | null {
   if (!reason || typeof reason !== 'string' || !reason.trim()) {
     return 'REASON_REQUIRED'
   }

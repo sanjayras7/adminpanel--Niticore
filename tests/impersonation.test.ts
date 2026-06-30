@@ -1,6 +1,7 @@
 import { requireRoles, AuthError } from '@/lib/auth'
 import { checkImpersonationBlock, getActiveImpersonationSession } from '@/lib/middleware/impersonation'
 import { ImpersonationSession } from '@/lib/models/ImpersonationSession'
+import { validateReason } from '@/app/api/v1/internal/impersonation/start/route'
 
 jest.mock('@/lib/models/ImpersonationSession', () => ({
   ImpersonationSession: {
@@ -12,19 +13,12 @@ jest.mock('@/lib/models/ImpersonationSession', () => ({
 const mockFindOne = ImpersonationSession.findOne as jest.Mock
 const now = new Date()
 const futureTime = new Date(now.getTime() + 60 * 60 * 1000)
-const pastTime = new Date(now.getTime() - 60 * 60 * 1000)
-
-type MockNextRequest = {
-  method: string
-  headers: { get: (name: string) => string | null }
-  url: string
-}
 
 function makeRequest(
   method: string,
   userId?: string,
   body?: unknown,
-): MockNextRequest {
+): Request {
   const headers: Record<string, string> = {}
   if (userId) headers['x-internal-user-id'] = userId
   if (body) headers['content-type'] = 'application/json'
@@ -251,36 +245,48 @@ describe('checkImpersonationBlock', () => {
   })
 })
 
-describe('start impersonation validation', () => {
-  const REASON_MIN_LENGTH = 10
-  const REASON_MAX_LENGTH = 500
+describe('validateReason', () => {
+  it('rejects null', () => {
+    expect(validateReason(null)).toBe('REASON_REQUIRED')
+  })
 
-  it('rejects missing reason', () => {
-    expect(true).toBe(true)
+  it('rejects undefined', () => {
+    expect(validateReason(undefined)).toBe('REASON_REQUIRED')
+  })
+
+  it('rejects empty string', () => {
+    expect(validateReason('')).toBe('REASON_REQUIRED')
+  })
+
+  it('rejects whitespace-only string', () => {
+    expect(validateReason('   ')).toBe('REASON_REQUIRED')
+  })
+
+  it('rejects non-string type', () => {
+    expect(validateReason(123)).toBe('REASON_REQUIRED')
   })
 
   it('rejects reason shorter than 10 characters', () => {
-    expect('short'.length).toBeLessThan(REASON_MIN_LENGTH)
+    expect(validateReason('short')).toBe('REASON_TOO_SHORT')
+  })
+
+  it('accepts reason at minimum length', () => {
+    expect(validateReason('x'.repeat(10))).toBeNull()
   })
 
   it('rejects reason longer than 500 characters', () => {
-    const longReason = 'x'.repeat(501)
-    expect(longReason.length).toBeGreaterThan(REASON_MAX_LENGTH)
+    expect(validateReason('x'.repeat(501))).toBe('REASON_TOO_LONG')
+  })
+
+  it('accepts reason at maximum length', () => {
+    expect(validateReason('x'.repeat(500))).toBeNull()
+  })
+
+  it('strips whitespace when checking min length', () => {
+    expect(validateReason('  abc  ')).toBe('REASON_TOO_SHORT')
   })
 
   it('accepts valid reason', () => {
-    const validReason = 'Investigating a billing issue for customer'
-    expect(validReason.length).toBeGreaterThanOrEqual(REASON_MIN_LENGTH)
-    expect(validReason.length).toBeLessThanOrEqual(REASON_MAX_LENGTH)
-  })
-})
-
-describe('end impersonation', () => {
-  it('rejects when no active session exists', () => {
-    expect('handler returns 400 NO_ACTIVE_IMPERSONATION').toBeTruthy()
-  })
-
-  it('allows ending an active session', () => {
-    expect('handler returns 200 with ended status').toBeTruthy()
+    expect(validateReason('Investigating a billing issue for customer')).toBeNull()
   })
 })

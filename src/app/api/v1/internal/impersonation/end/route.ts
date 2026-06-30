@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { InternalUser } from '@/lib/models'
-import { getAuthUser, requireRoles, AuthError } from '@/lib/auth'
+import { getAuthUser, AuthError } from '@/lib/auth'
 import { validateAndClearImpersonationSession, getActiveImpersonationSession } from '@/lib/middleware/impersonation'
 import { writeAuditEvent } from '@/lib/audit'
 
@@ -15,6 +14,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status },
     )
   }
+
+  await validateAndClearImpersonationSession(authUser.id)
 
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
   const userAgent = request.headers.get('user-agent') || undefined
