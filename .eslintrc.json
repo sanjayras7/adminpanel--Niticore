@@ -2,5 +2,16 @@
   "extends": [
     "next/core-web-vitals",
     "next/typescript"
+  ],
+  "overrides": [
+    {
+      "files": [
+        "src/lib/migrations/**/*.js",
+        "jest.config.js"
+      ],
+      "rules": {
+        "@typescript-eslint/no-require-imports": "off"
+      }
+    }
   ]
 }

@@ -9,6 +9,19 @@ async function up() {
 
   try {
     await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS magic_links (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        token VARCHAR(255) NOT NULL UNIQUE,
+        otp VARCHAR(6) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        consumed_at TIMESTAMPTZ,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `)
+
+    await sequelize.query(`
       ALTER TABLE magic_links
         ADD COLUMN IF NOT EXISTS internal_user_id UUID REFERENCES internal_users(id),
         ADD COLUMN IF NOT EXISTS purpose VARCHAR(20) CHECK (purpose IN ('login','totp_enrollment'));

@@ -73,6 +73,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         purpose: 'login',
         consumed_at: null,
         expires_at: expiresAt,
+        created_at: new Date(),
+        updated_at: new Date(),
       } as MagicLink)
 
       await sendMagicLinkEmail(email, token, otp).catch((err) => {
