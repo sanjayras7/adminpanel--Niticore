@@ -9,7 +9,10 @@
     "lint": "next lint",
     "test": "jest --forceExit --detectOpenHandles",
     "test:watch": "jest --watch --forceExit --detectOpenHandles",
-    "migrate": "node -r dotenv/config src/lib/migrations/run.js"
+    "migrate": "node -r dotenv/config src/lib/migrations/run.js",
+    "db:migrate": "node -r dotenv/config src/lib/migrations/run.js",
+    "db:seed:dev": "npx tsx scripts/seed-dev.ts",
+    "db:reset:dev": "npx tsx -e \"const { execSync } = require('child_process'); execSync('node -r dotenv/config src/lib/migrations/run.js down; node -r dotenv/config src/lib/migrations/run.js up', { stdio: 'inherit', shell: true })\" && npx tsx scripts/seed-dev.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -46,6 +49,7 @@
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^30.4.1",
     "ts-jest": "^29.1.0",
+    "tsx": "^4.7.0",
     "typescript": "^5.3.0"
   }
 }
